@@ -19,10 +19,7 @@ def main():
     predictor = SAM2ImagePredictor(sam2_model)
     # torch_model = predictor.model.image_encoder.eval()
     torch_model = predictor.model.image_encoder.bfloat16().eval()
-    name = "sam2.1_hiera_large_exported"
     img_size=1024
-
-    "Save the model to pytorch ExportedProgram format."
 
     example_args = (
         torch.randn(5, 3, img_size, img_size).to(device).type(torch.bfloat16)
