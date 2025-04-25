@@ -13,7 +13,7 @@ def verify_model(
 ):
     # PyTorch
     exported_program = export(torch_model, args=example_args, kwargs=example_kwargs)
-    torch_output: torch.Tensor = exported_program.module()(*example_args)
+    expected: torch.Tensor = exported_program.module()(*example_args)
 
     # Relax
     mod = from_exported_program(exported_program)
@@ -21,27 +21,20 @@ def verify_model(
     exe = relax.build(mod, target=target)
     vm = relax.VirtualMachine(exe, dev)
     tvm_args = [tvm.nd.from_dlpack(x.contiguous()) for x in example_args]
-    tvm_output = vm["main"](*tvm_args)
+    tvm_outputs = vm["main"](*tvm_args)
 
-    if isinstance(torch_output, tuple):
-        expected = torch.stack(torch_output)
-        actual = torch.stack([torch.from_numpy(x.numpy()) for x in tvm_output])
+    # check if the outputs match
+    if isinstance(expected, dict):
+        for i, key in enumerate(expected.keys()):
+            actual = torch.from_numpy(tvm_outputs[i].numpy())
+            torch.testing.assert_close(
+                actual, expected[key], rtol=1e-4, atol=1e-4, equal_nan=True
+            )
     else:
-        expected = torch_output
-        actual = torch.from_numpy(tvm_output[0].numpy())
-
-    torch.testing.assert_close(
-        actual.shape,
-        expected.shape,
-        msg=f"expected: {expected.shape}, actual: {actual.shape}",
-    )
-    torch.testing.assert_close(
-        actual,
-        expected,
-        rtol=1e-4,
-        atol=1e-4,
-        equal_nan=True,
-    )
+        actuals = torch.from_numpy(tvm_outputs[0].numpy())
+        torch.testing.assert_close(
+            actuals, expected, rtol=1e-4, atol=1e-4, equal_nan=True
+        )
 
 
 def verify_torchvision_model(model_name):
