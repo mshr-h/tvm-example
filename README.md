@@ -18,6 +18,12 @@ cd 3rdparty
 ./build-tvm.sh --clean --llvm llvm-config # change if you want to use different llvm version
 ```
 
+## torchvision
+
+```bash
+python test_e2e_torchvision.py -v
+```
+
 ## (wip) sam2
 
 ```bash
