@@ -28,11 +28,13 @@ python test_e2e_torchvision.py -v
 
 ```bash
 cd test_sam2
-git clone https://github.com/facebookresearch/sam2.git sam2_repo && cd sam2_repo
+git clone https://github.com/facebookresearch/sam2.git sam2_repo
+cd sam2_repo
 uv pip install -e .
-cd checkpoints/
+cd ../checkpoints/
 bash download_ckpts.sh
-cd ..
+cd ../../
+uv run test_sam2.py
 ```
 
 - `AssertionError: Unsupported function types ['sym_size.int', 'upsample_bicubic2d.vec', 'mul']`
