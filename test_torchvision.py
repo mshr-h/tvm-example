@@ -1,5 +1,5 @@
 import torch
-from torch.export import export
+from torch.export import export, Dim
 import pytest
 
 import tvm
@@ -9,16 +9,26 @@ from tvm.relax.frontend.torch import from_exported_program
 
 
 def verify_model(
-    torch_model, example_args, example_kwargs={}, target: str = "llvm", dev=tvm.cpu()
+    torch_model,
+    example_args,
+    example_kwargs={},
+    dynamic_shapes=None,
+    target: str = "llvm",
+    dev=tvm.cpu(),
 ):
     # PyTorch
-    exported_program = export(torch_model, args=example_args, kwargs=example_kwargs)
+    exported_program = export(
+        torch_model,
+        args=example_args,
+        kwargs=example_kwargs,
+        dynamic_shapes=dynamic_shapes,
+    )
     expected: torch.Tensor = exported_program.module()(*example_args)
 
     # Relax
     mod = from_exported_program(exported_program)
     mod = tvm.relax.transform.DecomposeOpsForInference()(mod)
-    exe = relax.build(mod, target=target)
+    exe = tvm.compile(mod, target=target)
     vm = relax.VirtualMachine(exe, dev)
     tvm_args = [tvm.nd.from_dlpack(x.contiguous()) for x in example_args]
     tvm_outputs = vm["main"](*tvm_args)
@@ -37,7 +47,7 @@ def verify_model(
         )
 
 
-def verify_torchvision_model(model_name):
+def verify_torchvision_model(model_name: str, is_dynamic: bool = False):
     from tvm.contrib.download import download_testdata
     from torchvision.models import get_model, get_model_weights
     from torchvision.io import read_image
@@ -51,12 +61,25 @@ def verify_torchvision_model(model_name):
     model = get_model(model_name, weights="DEFAULT").eval()
     weights = get_model_weights(model_name).DEFAULT
     transforms = weights.transforms()
+    example = transforms(image_tensor).unsqueeze(0)
 
-    batch = transforms(image_tensor).unsqueeze(0)
-    example_args = (batch,)
-    verify_model(model, example_args)
+    if is_dynamic:
+        example = example.expand(2, -1, -1, -1)
+        example_args = (example,)
+        batch = Dim("batch")
+        dynamic_shapes = {"x": {0: batch}}
+    else:
+        example_args = (example,)
+        dynamic_shapes = None
+
+    verify_model(model, example_args, dynamic_shapes=dynamic_shapes)
 
 
+@pytest.mark.parametrize(
+    "is_dynamic",
+    [True, False],
+    ids=["dynamic", "static"],
+)
 @pytest.mark.parametrize(
     "torch_model_name",
     [
@@ -97,8 +120,8 @@ def verify_torchvision_model(model_name):
         "lraspp_mobilenet_v3_large",
     ],
 )
-def test_e2e(torch_model_name: str):
-    verify_torchvision_model(torch_model_name)
+def test_e2e(torch_model_name: str, is_dynamic: bool):
+    verify_torchvision_model(torch_model_name, is_dynamic)
 
 
 if __name__ == "__main__":
