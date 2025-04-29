@@ -1,6 +1,6 @@
 import timm
 import torch
-from torch.export import export
+from torch.export import export, Dim
 import pytest
 from PIL import Image
 
@@ -11,10 +11,20 @@ from tvm.relax.frontend.torch import from_exported_program
 
 
 def verify_model(
-    torch_model, example_args, example_kwargs={}, target: str = "llvm", dev=tvm.cpu()
+    torch_model,
+    example_args,
+    example_kwargs={},
+    dynamic_shapes=None,
+    target: str = "llvm",
+    dev=tvm.cpu(),
 ):
     # PyTorch
-    exported_program = export(torch_model, args=example_args, kwargs=example_kwargs)
+    exported_program = export(
+        torch_model,
+        args=example_args,
+        kwargs=example_kwargs,
+        dynamic_shapes=dynamic_shapes,
+    )
     expected: torch.Tensor = exported_program.module()(*example_args)
 
     # Relax
@@ -39,7 +49,7 @@ def verify_model(
         )
 
 
-def verify_timm_model(model_name):
+def verify_timm_model(model_name, is_dynamic: bool = False):
     from tvm.contrib.download import download_testdata
 
     # prepare sample image
@@ -52,12 +62,26 @@ def verify_timm_model(model_name):
     transform = timm.data.create_transform(
         **timm.data.resolve_data_config(torch_model.pretrained_cfg)
     )
+    example = transform(image).unsqueeze(0)
 
-    batch = transform(image).unsqueeze(0)
-    example_args = (batch,)
-    verify_model(torch_model, example_args)
+    if is_dynamic:
+        example = example.expand(2, -1, -1, -1)
+        example_args = (example,)
+        batch = Dim("batch")
+        dynamic_shapes = {"x": {0: batch}}
+    else:
+        example_args = (example,)
+        dynamic_shapes = None
+
+    example_args = (example,)
+    verify_model(torch_model, example_args, dynamic_shapes=dynamic_shapes)
 
 
+@pytest.mark.parametrize(
+    "is_dynamic",
+    [True, False],
+    ids=["dynamic", "static"],
+)
 @pytest.mark.parametrize(
     "timm_model_name",
     [
@@ -124,8 +148,8 @@ def verify_timm_model(model_name):
         "xcit_large_24_p8_224",
     ],
 )
-def test_e2e(timm_model_name: str):
-    verify_timm_model(timm_model_name)
+def test_e2e(timm_model_name: str, is_dynamic: bool):
+    verify_timm_model(timm_model_name, is_dynamic)
 
 
 if __name__ == "__main__":
