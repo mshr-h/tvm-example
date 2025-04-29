@@ -25,7 +25,7 @@ def test_nanpgpt():
     mod = tvm.relax.transform.DecomposeOpsForInference()(mod)
     dev = tvm.cpu()
     target = tvm.target.Target.from_device(dev)
-    exe = relax.build(mod, target=target)
+    exe = tvm.compile(mod, target=target)
     vm = relax.VirtualMachine(exe, dev)
     tvm_args = [tvm.nd.from_dlpack(x.contiguous()) for x in example_args]
     tvm_outputs = vm["main"](*tvm_args)
