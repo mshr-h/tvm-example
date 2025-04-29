@@ -136,7 +136,20 @@ cd ../../
 uv run test_sam2.py
 ```
 
-- `AssertionError: Unsupported function types ['sym_size.int', 'upsample_bicubic2d.vec', 'mul']`
+```
+AssertionError: Unsupported function types ['sym_size.int', 'upsample_bicubic2d.vec', 'mul']
+```
+
+## nanoGPT
+
+```bash
+cd test_nanogpt
+pytest test_nanogpt.py -v
+```
+
+```
+FAILED test_nanogpt.py::test_nanpgpt - AssertionError: Unsupported function types ['sym_size.int']
+```
 
 ## Ideas
 
