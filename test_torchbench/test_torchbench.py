@@ -76,9 +76,9 @@ def verify_torchbench_model(model_name):
         "hf_T5_base",
         "hf_T5_large",
         "hf_Whisper",
-        # "hf_distil_whisper", # skip due to taking too long
+        # "hf_distil_whisper", # taking too long
         "lennard_jones",
-        "llama_v2_7b_16h",
+        # "llama_v2_7b_16h", # need to set `HUGGING_FACE_HUB_TOKEN` to download weights
         "llava",
         "maml",
         "maml_omniglot",
@@ -88,7 +88,7 @@ def verify_torchbench_model(model_name):
         "mobilenet_v3_large",
         "moco",
         "moondream",
-        # "nanogpt", # skip due to segmentation fault
+        # "nanogpt", # segmentation fault
         "nvidia_deeprecommender",
         "phlippe_densenet",
         "phlippe_resnet",
@@ -105,8 +105,8 @@ def verify_torchbench_model(model_name):
         "sam",
         "shufflenet_v2_x1_0",
         "squeezenet1_1",
-        "stable_diffusion_text_encoder",
-        "stable_diffusion_unet",
+        # "stable_diffusion_text_encoder", # need to set `HUGGING_FACE_HUB_TOKEN` to download weights
+        # "stable_diffusion_unet", # need to set `HUGGING_FACE_HUB_TOKEN` to download weights
         "timm_efficientnet",
         "timm_nfnet",
         "timm_regnet",

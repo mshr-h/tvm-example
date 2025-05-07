@@ -67,7 +67,6 @@ FAILED test_torchbench.py::test_e2e[hf_Roberta_base] - torch._dynamo.exc.UserErr
 FAILED test_torchbench.py::test_e2e[hf_T5] - torch._dynamo.exc.UserError: Expecting `args` to be a tuple of example positional inputs, got <class 'dict'>
 FAILED test_torchbench.py::test_e2e[hf_T5_base] - torch._dynamo.exc.UserError: Expecting `args` to be a tuple of example positional inputs, got <class 'dict'>
 FAILED test_torchbench.py::test_e2e[hf_T5_large] - torch._dynamo.exc.UserError: Expecting `args` to be a tuple of example positional inputs, got <class 'dict'>
-FAILED test_torchbench.py::test_e2e[llama_v2_7b_16h] - NotImplementedError: Make sure to set `HUGGING_FACE_HUB_TOKEN` so you can download weights
 FAILED test_torchbench.py::test_e2e[llava] - torch._dynamo.exc.UserError: Expecting `args` to be a tuple of example positional inputs, got <class 'dict'>
 FAILED test_torchbench.py::test_e2e[maml] - torch._dynamo.exc.Unsupported: Attempted to call function marked as skipped
 FAILED test_torchbench.py::test_e2e[maml_omniglot] - NotImplementedError: Model doesn't support customizing batch size, but eval test is providing a batch size other than DEFAULT_EVAL_BSIZE
@@ -82,8 +81,6 @@ FAILED test_torchbench.py::test_e2e[pyhpc_turbulent_kinetic_energy] - NotImpleme
 FAILED test_torchbench.py::test_e2e[pytorch_CycleGAN_and_pix2pix] - AssertionError: Unsupported function types ['instance_norm.default']
 FAILED test_torchbench.py::test_e2e[pytorch_stargan] - NotImplementedError: Model doesn't support customizing batch size, but eval test is providing a batch size other than DEFAULT_EVAL_BSIZE
 FAILED test_torchbench.py::test_e2e[sam] - KeyError: 'pixel_mean'
-FAILED test_torchbench.py::test_e2e[stable_diffusion_text_encoder] - NotImplementedError: Make sure to set `HUGGING_FACE_HUB_TOKEN` so you can download weights
-FAILED test_torchbench.py::test_e2e[stable_diffusion_unet] - NotImplementedError: Make sure to set `HUGGING_FACE_HUB_TOKEN` so you can download weights
 FAILED test_torchbench.py::test_e2e[timm_nfnet] - AssertionError: Tensor-likes are not close!
 FAILED test_torchbench.py::test_e2e[timm_resnest] - AssertionError: Tensor-likes are not close!
 FAILED test_torchbench.py::test_e2e[torch_multimodal_clip] - IndexError: ShapeExpr index out of range
@@ -185,7 +182,7 @@ FAILED test_nanogpt.py::test_nanpgpt - AssertionError: Unsupported function type
     - hf_Whisper
     - hf_distil_whisper
     - lennard_jones
-    - llama_v2_7b_16h
+    - llama_v2_7b_16h: HUGGING_FACE_HUB_TOKENが必要
     - llava
     - maml
     - maml_omniglot
@@ -212,8 +209,8 @@ FAILED test_nanogpt.py::test_nanpgpt - AssertionError: Unsupported function type
     - sam
     - shufflenet_v2_x1_0
     - squeezenet1_1
-    - stable_diffusion_text_encoder
-    - stable_diffusion_unet
+    - stable_diffusion_text_encoder: HUGGING_FACE_HUB_TOKENが必要
+    - stable_diffusion_unet: HUGGING_FACE_HUB_TOKENが必要
     - timm_efficientnet
     - timm_nfnet
     - timm_regnet
