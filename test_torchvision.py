@@ -15,6 +15,9 @@ def verify_model(
     dynamic_shapes=None,
     target: str = "llvm",
     dev=tvm.cpu(),
+    rtol=1e-4,
+    atol=1e-4,
+    equal_nan=True,
 ):
     # PyTorch
     exported_program = export(
@@ -38,12 +41,12 @@ def verify_model(
         for i, key in enumerate(expected.keys()):
             actual = torch.from_numpy(tvm_outputs[i].numpy())
             torch.testing.assert_close(
-                actual, expected[key], rtol=1e-4, atol=1e-4, equal_nan=True
+                actual, expected[key], rtol=rtol, atol=atol, equal_nan=equal_nan
             )
     else:
         actuals = torch.from_numpy(tvm_outputs[0].numpy())
         torch.testing.assert_close(
-            actuals, expected, rtol=1e-4, atol=1e-4, equal_nan=True
+            actuals, expected, rtol=rtol, atol=atol, equal_nan=equal_nan
         )
 
 
