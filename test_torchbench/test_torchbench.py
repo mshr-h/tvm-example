@@ -60,14 +60,14 @@ def verify_torchbench_model(model_name):
         # "Background_Matting", # skip due to taking too long
         "LearningToPaint",
         "Super_SloMo",
-        "alexnet",
+        # "alexnet", # in torchvision
         "basic_gnn_edgecnn",
         "basic_gnn_gcn",
         "basic_gnn_gin",
         "basic_gnn_sage",
         "dcgan",
         "demucs",
-        "densenet121",
+        # "densenet121", # in torchvision
         "dlrm",
         "functorch_dp_cifar10",
         "functorch_maml_omniglot",
@@ -91,9 +91,9 @@ def verify_torchbench_model(model_name):
         "maml",
         "maml_omniglot",
         "microbench_unbacked_tolist_sum",
-        "mnasnet1_0",
-        "mobilenet_v2",
-        "mobilenet_v3_large",
+        # "mnasnet1_0", # in torchvision
+        # "mobilenet_v2", # in torchvision
+        # "mobilenet_v3_large", # in torchvision
         "moco",
         "moondream",
         # "nanogpt", # segmentation fault
@@ -106,25 +106,25 @@ def verify_torchbench_model(model_name):
         "pytorch_CycleGAN_and_pix2pix",
         "pytorch_stargan",
         "pytorch_unet",
-        "resnet152",
-        "resnet18",
-        "resnet50",
-        "resnext50_32x4d",
+        # "resnet152", # in torchvision
+        # "resnet18", # in torchvision
+        # "resnet50", # in torchvision
+        # "resnext50_32x4d", # in torchvision
         "sam",
-        "shufflenet_v2_x1_0",
-        "squeezenet1_1",
+        # "shufflenet_v2_x1_0", # in torchvision
+        # "squeezenet1_1", # in torchvision
         # "stable_diffusion_text_encoder", # need to set `HUGGING_FACE_HUB_TOKEN` to download weights
         # "stable_diffusion_unet", # need to set `HUGGING_FACE_HUB_TOKEN` to download weights
-        "timm_efficientnet",
+        # "timm_efficientnet", # in torchvision
         "timm_nfnet",
-        "timm_regnet",
+        # "timm_regnet", # in torchvision
         "timm_resnest",
         "timm_vision_transformer",
         "timm_vision_transformer_large",
         "timm_vovnet",
         "torch_multimodal_clip",
         "tts_angular",
-        "vgg16",
+        # "vgg16", # in torchvision
         "yolov3",
     ],
 )
