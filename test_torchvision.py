@@ -1,6 +1,7 @@
 import torch
 from torch.export import export, Dim
 import pytest
+from typing import Optional
 
 import tvm
 from tvm import relax
@@ -13,12 +14,15 @@ def verify_model(
     example_args,
     example_kwargs={},
     dynamic_shapes=None,
-    target: str = "llvm",
+    target: Optional[str] = None,
     dev=tvm.cpu(),
     rtol=1e-4,
     atol=1e-4,
     equal_nan=True,
 ):
+    if target is None:
+        target = tvm.target.Target.from_device(dev)
+
     # PyTorch
     exported_program = export(
         torch_model,

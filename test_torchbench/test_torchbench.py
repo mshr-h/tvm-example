@@ -2,6 +2,7 @@ import torchbenchmark
 import torch
 from torch.export import export
 import pytest
+from typing import Optional
 
 import tvm
 from tvm import relax
@@ -10,8 +11,15 @@ from tvm.relax.frontend.torch import from_exported_program
 
 
 def verify_model(
-    torch_model, example_args, example_kwargs={}, target: str = "llvm", dev=tvm.cpu()
+    torch_model,
+    example_args,
+    example_kwargs={},
+    dev=tvm.cpu(),
+    target: Optional[str] = None,
 ):
+    if target is None:
+        target = tvm.target.Target.from_device(dev)
+
     # PyTorch
     exported_program = export(torch_model, args=example_args, kwargs=example_kwargs)
     expected: torch.Tensor = exported_program.module()(*example_args)
