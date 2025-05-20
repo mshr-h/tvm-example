@@ -21,8 +21,8 @@ def verify_model(
         target = tvm.target.Target.from_device(dev)
 
     # PyTorch
-    exported_program = export(torch_model, args=example_args, kwargs=example_kwargs)
-    expected: torch.Tensor = exported_program.module()(*example_args)
+    exported_program = export(torch_model, args=tuple(example_args), kwargs=example_kwargs)
+    expected = exported_program.module()(*example_args)
 
     # Relax
     mod = from_exported_program(exported_program)
@@ -38,6 +38,16 @@ def verify_model(
             actual = torch.from_numpy(tvm_outputs[i].numpy())
             torch.testing.assert_close(
                 actual, expected[key], rtol=1e-4, atol=1e-4, equal_nan=True
+            )
+    elif isinstance(expected, tuple):
+        # yolov3 model returns a tuple of tensors
+        refined_expected = [expected[0]]
+        for i in range(len(expected[1])):
+            refined_expected.append(expected[1][i])
+        for i in range(len(refined_expected)):
+            actual = torch.from_numpy(tvm_outputs[i].numpy())
+            torch.testing.assert_close(
+                actual, refined_expected[i], rtol=1e-4, atol=1e-4, equal_nan=True
             )
     else:
         actuals = torch.from_numpy(tvm_outputs[0].numpy())
