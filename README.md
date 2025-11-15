@@ -25,11 +25,20 @@ pytest test_torchvision.py -v
 ```
 
 ```
-FAILED test_torchvision.py::test_e2e[inception_v3] - AssertionError: Tensor-likes are not close!
-FAILED test_torchvision.py::test_e2e[maxvit_t] - AssertionError: Unsupported function types ['swapaxes.default']
-FAILED test_torchvision.py::test_e2e[swin_t] - AssertionError: Unsupported function types ['new_zeros.default', 'fill_.Tensor']
-FAILED test_torchvision.py::test_e2e[swin_v2_t] - AssertionError: Unsupported function types ['new_zeros.default', 'fill_.Tensor']
-FAILED test_torchvision.py::test_e2e[quantized_inception_v3] - AssertionError: Tensor-likes are not close!
+FAILED test_torchvision.py::test_e2e[inception_v3-dynamic] - AssertionError: Tensor-likes are not close!
+FAILED test_torchvision.py::test_e2e[inception_v3-static] - AssertionError: Tensor-likes are not close!
+FAILED test_torchvision.py::test_e2e[maxvit_t-dynamic] - AssertionError: Unsupported function types ['sym_size.int', 'swapaxes.default']
+FAILED test_torchvision.py::test_e2e[maxvit_t-static] - AssertionError: Unsupported function types ['swapaxes.default']
+FAILED test_torchvision.py::test_e2e[shufflenet_v2_x0_5-dynamic] - AssertionError: Unsupported function types ['sym_size.int']
+FAILED test_torchvision.py::test_e2e[swin_t-dynamic] - AssertionError: Unsupported function types ['sym_size.int', 'fill_.Tensor', 'mul']
+FAILED test_torchvision.py::test_e2e[swin_t-static] - AssertionError: Unsupported function types ['alias.default', 'fill_.Tensor']
+FAILED test_torchvision.py::test_e2e[swin_v2_t-dynamic] - AssertionError: Unsupported function types ['sym_size.int', 'fill_.Tensor', 'mul']
+FAILED test_torchvision.py::test_e2e[swin_v2_t-static] - AssertionError: Unsupported function types ['alias.default', 'fill_.Tensor']
+FAILED test_torchvision.py::test_e2e[vit_b_32-dynamic] - AssertionError: Unsupported function types ['sym_size.int', 'mul']
+FAILED test_torchvision.py::test_e2e[quantized_inception_v3-dynamic] - AssertionError: Tensor-likes are not close!
+FAILED test_torchvision.py::test_e2e[quantized_inception_v3-static] - AssertionError: Tensor-likes are not close!
+FAILED test_torchvision.py::test_e2e[quantized_shufflenet_v2_x0_5-dynamic] - AssertionError: Unsupported function types ['sym_size.int']
+FAILED test_torchvision.py::test_e2e[lraspp_mobilenet_v3_large-dynamic] - torch._dynamo.exc.UserError: When `dynamic_shapes` is specified as a dict, its top-level keys must be the arg names ['input'] of `inputs`, but here they are ['x']. Alternatively,...
 ```
 
 ## torchbench

@@ -29,7 +29,7 @@ def verify_model(
     mod = tvm.relax.transform.DecomposeOpsForInference()(mod)
     exe = relax.build(mod, target=target)
     vm = relax.VirtualMachine(exe, dev)
-    tvm_args = [tvm.nd.from_dlpack(x.contiguous()) for x in example_args]
+    tvm_args = [tvm.runtime.from_dlpack(x.contiguous()) for x in example_args]
     tvm_outputs = vm["main"](*tvm_args)
 
     # check if the outputs match

@@ -27,7 +27,7 @@ def test_nanpgpt():
     target = tvm.target.Target.from_device(dev)
     exe = tvm.compile(mod, target=target)
     vm = relax.VirtualMachine(exe, dev)
-    tvm_args = [tvm.nd.from_dlpack(x.contiguous()) for x in example_args]
+    tvm_args = [tvm.runtime.from_dlpack(x.contiguous()) for x in example_args]
     tvm_outputs = vm["main"](*tvm_args)
 
     # check if the outputs match
