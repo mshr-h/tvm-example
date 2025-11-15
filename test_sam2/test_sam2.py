@@ -41,7 +41,7 @@ def main():
             strict=False,
         )
 
-    mod = from_exported_program(ep_module)
+    mod = from_exported_program(ep_module, run_ep_decomposition=True)
 
 
 if __name__ == "__main__":

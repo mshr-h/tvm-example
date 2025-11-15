@@ -25,7 +25,7 @@ def verify_model(
     expected = exported_program.module()(*example_args)
 
     # Relax
-    mod = from_exported_program(exported_program)
+    mod = from_exported_program(exported_program, run_ep_decomposition=True)
     mod = tvm.relax.transform.DecomposeOpsForInference()(mod)
     exe = relax.build(mod, target=target)
     vm = relax.VirtualMachine(exe, dev)

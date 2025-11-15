@@ -1,0 +1,5 @@
+{
+  "python.analysis.extraPaths": [
+    "./test_sam2/sam2_repo"
+  ]
+}

@@ -30,15 +30,15 @@ FAILED test_torchvision.py::test_e2e[inception_v3-static] - AssertionError: Tens
 FAILED test_torchvision.py::test_e2e[maxvit_t-dynamic] - AssertionError: Unsupported function types ['sym_size.int', 'swapaxes.default']
 FAILED test_torchvision.py::test_e2e[maxvit_t-static] - AssertionError: Unsupported function types ['swapaxes.default']
 FAILED test_torchvision.py::test_e2e[shufflenet_v2_x0_5-dynamic] - AssertionError: Unsupported function types ['sym_size.int']
-FAILED test_torchvision.py::test_e2e[swin_t-dynamic] - AssertionError: Unsupported function types ['sym_size.int', 'fill_.Tensor', 'mul']
+FAILED test_torchvision.py::test_e2e[swin_t-dynamic] - AssertionError: Unsupported function types ['mul', 'sym_size.int', 'fill_.Tensor']
 FAILED test_torchvision.py::test_e2e[swin_t-static] - AssertionError: Unsupported function types ['alias.default', 'fill_.Tensor']
-FAILED test_torchvision.py::test_e2e[swin_v2_t-dynamic] - AssertionError: Unsupported function types ['sym_size.int', 'fill_.Tensor', 'mul']
+FAILED test_torchvision.py::test_e2e[swin_v2_t-dynamic] - AssertionError: Unsupported function types ['mul', 'sym_size.int', 'fill_.Tensor']
 FAILED test_torchvision.py::test_e2e[swin_v2_t-static] - AssertionError: Unsupported function types ['alias.default', 'fill_.Tensor']
-FAILED test_torchvision.py::test_e2e[vit_b_32-dynamic] - AssertionError: Unsupported function types ['sym_size.int', 'mul']
+FAILED test_torchvision.py::test_e2e[vit_b_32-dynamic] - AssertionError: Unsupported function types ['mul', 'sym_size.int']
 FAILED test_torchvision.py::test_e2e[quantized_inception_v3-dynamic] - AssertionError: Tensor-likes are not close!
 FAILED test_torchvision.py::test_e2e[quantized_inception_v3-static] - AssertionError: Tensor-likes are not close!
 FAILED test_torchvision.py::test_e2e[quantized_shufflenet_v2_x0_5-dynamic] - AssertionError: Unsupported function types ['sym_size.int']
-FAILED test_torchvision.py::test_e2e[lraspp_mobilenet_v3_large-dynamic] - torch._dynamo.exc.UserError: When `dynamic_shapes` is specified as a dict, its top-level keys must be the arg names ['input'] of `inputs`, but here they are ['x']. Alternatively,...
+FAILED test_torchvision.py::test_e2e[lraspp_mobilenet_v3_large-dynamic] - torch._dynamo.exc.UserError: When `dynamic_shapes` is specified as a dict, its top-level keys must be the arg names ['input'] of `inputs`, but here they are ['x']. Alternatively, you could also ignore arg names entirely and ...
 ```
 
 ## torchbench
@@ -53,80 +53,87 @@ pytest test_torchbench.py -v
 ```
 
 ```
-FAILED test_torchbench.py::test_e2e[BERT_pytorch] - AssertionError: Mutating module attribute mask during export.
-FAILED test_torchbench.py::test_e2e[LearningToPaint] - AssertionError: Tensor-likes are not close!
-FAILED test_torchbench.py::test_e2e[Super_SloMo] - AssertionError: Unsupported function types ['l1_loss.default', 'mse_loss.default', 'broadcast_tensors.default', 'grid_sampler.default', 'mean.default']
-FAILED test_torchbench.py::test_e2e[basic_gnn_edgecnn] - AssertionError: Unsupported function types ['new_zeros.default', 'scatter_reduce_.two']
-FAILED test_torchbench.py::test_e2e[basic_gnn_gcn] - AssertionError: Unsupported function types ['add', 'masked_fill_.Scalar', 'le', 'pow_.Scalar', 'scatter_add_.default', 'new_zeros.default', 'sym_size.int', 'sym_constrain_range_for_size.default', '_assert_scalar.default'...
-FAILED test_torchbench.py::test_e2e[basic_gnn_gin] - AssertionError: Unsupported function types ['new_zeros.default', 'scatter_add_.default']
-FAILED test_torchbench.py::test_e2e[basic_gnn_sage] - AssertionError: Unsupported function types ['new_zeros.default', 'scatter_add_.default']
-FAILED test_torchbench.py::test_e2e[dcgan] - AssertionError: Tensor-likes are not close!
-FAILED test_torchbench.py::test_e2e[demucs] - AssertionError: Unsupported function types ['lstm.input', 'glu.default']
-FAILED test_torchbench.py::test_e2e[dlrm] - AssertionError: Unsupported function types ['embedding_bag.padding_idx']
-FAILED test_torchbench.py::test_e2e[functorch_maml_omniglot] - _pickle.UnpicklingError: Weights only load failed. This file can still be loaded, to do so you have two options, do those steps only if you trust the source of the checkpoint. 
-FAILED test_torchbench.py::test_e2e[hf_Albert] - torch._dynamo.exc.UserError: Expecting `args` to be a tuple of example positional inputs, got <class 'dict'>
-FAILED test_torchbench.py::test_e2e[hf_Bart] - torch._dynamo.exc.UserError: Expecting `args` to be a tuple of example positional inputs, got <class 'dict'>
-FAILED test_torchbench.py::test_e2e[hf_Bert] - torch._dynamo.exc.UserError: Expecting `args` to be a tuple of example positional inputs, got <class 'dict'>
-FAILED test_torchbench.py::test_e2e[hf_Bert_large] - torch._dynamo.exc.UserError: Expecting `args` to be a tuple of example positional inputs, got <class 'dict'>
-FAILED test_torchbench.py::test_e2e[hf_BigBird] - torch._dynamo.exc.UserError: Expecting `args` to be a tuple of example positional inputs, got <class 'dict'>
-FAILED test_torchbench.py::test_e2e[hf_DistilBert] - torch._dynamo.exc.UserError: Expecting `args` to be a tuple of example positional inputs, got <class 'dict'>
-FAILED test_torchbench.py::test_e2e[hf_GPT2] - torch._dynamo.exc.UserError: Expecting `args` to be a tuple of example positional inputs, got <class 'dict'>
-FAILED test_torchbench.py::test_e2e[hf_GPT2_large] - torch._dynamo.exc.UserError: Expecting `args` to be a tuple of example positional inputs, got <class 'dict'>
-FAILED test_torchbench.py::test_e2e[hf_Roberta_base] - torch._dynamo.exc.UserError: Expecting `args` to be a tuple of example positional inputs, got <class 'dict'>
-FAILED test_torchbench.py::test_e2e[hf_T5] - torch._dynamo.exc.UserError: Expecting `args` to be a tuple of example positional inputs, got <class 'dict'>
-FAILED test_torchbench.py::test_e2e[hf_T5_base] - torch._dynamo.exc.UserError: Expecting `args` to be a tuple of example positional inputs, got <class 'dict'>
-FAILED test_torchbench.py::test_e2e[hf_T5_large] - torch._dynamo.exc.UserError: Expecting `args` to be a tuple of example positional inputs, got <class 'dict'>
-FAILED test_torchbench.py::test_e2e[llava] - torch._dynamo.exc.UserError: Expecting `args` to be a tuple of example positional inputs, got <class 'dict'>
-FAILED test_torchbench.py::test_e2e[maml] - torch._dynamo.exc.Unsupported: Attempted to call function marked as skipped
-FAILED test_torchbench.py::test_e2e[maml_omniglot] - NotImplementedError: Model doesn't support customizing batch size, but eval test is providing a batch size other than DEFAULT_EVAL_BSIZE
-FAILED test_torchbench.py::test_e2e[microbench_unbacked_tolist_sum] - AssertionError: Unsupported function types ['add', 'le', 'sym_constrain_range_for_size.default', 'lt', '_assert_scalar.default', 'ge']
+FAILED test_torchbench.py::test_e2e[BERT_pytorch] - AssertionError: Tensor-likes are not close!
+FAILED test_torchbench.py::test_e2e[LearningToPaint] - AssertionError: The values for attribute 'shape' do not match: torch.Size([1, 64, 64, 64]) != torch.Size([1, 65]).
+FAILED test_torchbench.py::test_e2e[Super_SloMo] - AssertionError: Unsupported function types ['grid_sampler_2d.default', 'mean.default']
+FAILED test_torchbench.py::test_e2e[basic_gnn_edgecnn] - KeyError: 'torch_geometric.compile'
+FAILED test_torchbench.py::test_e2e[basic_gnn_gcn] - KeyError: 'torch_geometric.compile'
+FAILED test_torchbench.py::test_e2e[basic_gnn_gin] - KeyError: 'torch_geometric.compile'
+FAILED test_torchbench.py::test_e2e[basic_gnn_sage] - KeyError: 'torch_geometric.compile'
+FAILED test_torchbench.py::test_e2e[dcgan] - AssertionError: The values for attribute 'shape' do not match: torch.Size([1, 128, 16, 16]) != torch.Size([1, 1, 1, 1]).
+FAILED test_torchbench.py::test_e2e[demucs] - AssertionError: The values for attribute 'shape' do not match: torch.Size([1, 4, 2, 371372]) != torch.Size([4, 2, 371372]).
+FAILED test_torchbench.py::test_e2e[dlrm] - ModuleNotFoundError: No module named 'onnx'
+FAILED test_torchbench.py::test_e2e[functorch_dp_cifar10] - AssertionError: Unsupported function types ['native_group_norm.default']
+FAILED test_torchbench.py::test_e2e[functorch_maml_omniglot] - _pickle.UnpicklingError: Weights only load failed. This file can still be loaded, to do so you have two options, do those steps only if you trust the source of the checkpoint.
+FAILED test_torchbench.py::test_e2e[hf_Albert] - AttributeError: 'str' object has no attribute 'size'
+FAILED test_torchbench.py::test_e2e[hf_Bart] - AttributeError: 'str' object has no attribute 'new_zeros'
+FAILED test_torchbench.py::test_e2e[hf_Bert] - AttributeError: 'str' object has no attribute 'size'
+FAILED test_torchbench.py::test_e2e[hf_Bert_large] - AttributeError: 'str' object has no attribute 'size'
+FAILED test_torchbench.py::test_e2e[hf_BigBird] - AttributeError: 'str' object has no attribute 'size'
+FAILED test_torchbench.py::test_e2e[hf_DistilBert] - AttributeError: 'str' object has no attribute 'size'
+FAILED test_torchbench.py::test_e2e[hf_GPT2] - AttributeError: 'str' object has no attribute 'size'
+FAILED test_torchbench.py::test_e2e[hf_GPT2_large] - AttributeError: 'str' object has no attribute 'size'
+FAILED test_torchbench.py::test_e2e[hf_Roberta_base] - AttributeError: 'str' object has no attribute 'size'
+FAILED test_torchbench.py::test_e2e[hf_T5] - AttributeError: 'str' object has no attribute 'size'
+FAILED test_torchbench.py::test_e2e[hf_T5_base] - AttributeError: 'str' object has no attribute 'size'
+FAILED test_torchbench.py::test_e2e[hf_T5_large] - AttributeError: 'str' object has no attribute 'size'
+FAILED test_torchbench.py::test_e2e[hf_Whisper] - AssertionError: Unsupported function types ['native_layer_norm.default']
+FAILED test_torchbench.py::test_e2e[llava] - TypeError: embedding(): argument 'indices' (position 2) must be Tensor, not str
+FAILED test_torchbench.py::test_e2e[maml] - torch.fx.experimental.symbolic_shapes.GuardOnDataDependentSymNode: Could not extract specialized integer from data-dependent expression u192 + u197 + u202 + u207 + u212 + u217 + u222 + u227 + u232 + u237 + u242 + u247 + u252...
+FAILED test_torchbench.py::test_e2e[maml_omniglot] - ModuleNotFoundError: No module named 'higher'
+FAILED test_torchbench.py::test_e2e[microbench_unbacked_tolist_sum] - AssertionError: Unsupported function types ['_assert_scalar.default', 'ge', 'add', 'le', 'lt', 'sym_constrain_range_for_size.default']
 FAILED test_torchbench.py::test_e2e[moco] - NotImplementedError: DistributedDataParallel/allgather requires cuda
-FAILED test_torchbench.py::test_e2e[moondream] - torch._dynamo.exc.UserError: Expecting `args` to be a tuple of example positional inputs, got <class 'dict'>
-FAILED test_torchbench.py::test_e2e[phlippe_densenet] - AssertionError: Tensor-likes are not close!
-FAILED test_torchbench.py::test_e2e[phlippe_resnet] - AssertionError: Tensor-likes are not close!
-FAILED test_torchbench.py::test_e2e[pyhpc_equation_of_state] - torch._dynamo.exc.UserError: Expecting `args` to be a tuple of example positional inputs, got <class 'list'>
-FAILED test_torchbench.py::test_e2e[pyhpc_isoneutral_mixing] - torch._dynamo.exc.UserError: Expecting `args` to be a tuple of example positional inputs, got <class 'list'>
+FAILED test_torchbench.py::test_e2e[moondream] - TypeError: embedding(): argument 'indices' (position 2) must be Tensor, not str
+FAILED test_torchbench.py::test_e2e[nvidia_deeprecommender] - AssertionError: Tensor-likes are not close!
+FAILED test_torchbench.py::test_e2e[phlippe_densenet] - AssertionError: The values for attribute 'shape' do not match: torch.Size([1, 32, 32, 32]) != torch.Size([1, 10]).
+FAILED test_torchbench.py::test_e2e[phlippe_resnet] - AssertionError: The values for attribute 'shape' do not match: torch.Size([1, 16, 32, 32]) != torch.Size([1, 10]).
+FAILED test_torchbench.py::test_e2e[pyhpc_equation_of_state] - NotImplementedError: input_type torch.float64 is not handled yet
+FAILED test_torchbench.py::test_e2e[pyhpc_isoneutral_mixing] - NotImplementedError: input_type torch.float64 is not handled yet
 FAILED test_torchbench.py::test_e2e[pyhpc_turbulent_kinetic_energy] - NotImplementedError: Model doesn't support customizing batch size, but eval test is providing a batch size other than DEFAULT_EVAL_BSIZE
-FAILED test_torchbench.py::test_e2e[pytorch_CycleGAN_and_pix2pix] - AssertionError: Unsupported function types ['instance_norm.default']
+FAILED test_torchbench.py::test_e2e[pytorch_CycleGAN_and_pix2pix] - ModuleNotFoundError: No module named 'dominate'
 FAILED test_torchbench.py::test_e2e[pytorch_stargan] - NotImplementedError: Model doesn't support customizing batch size, but eval test is providing a batch size other than DEFAULT_EVAL_BSIZE
+FAILED test_torchbench.py::test_e2e[pytorch_unet] - AssertionError: Unsupported function types ['constant_pad_nd.default']
 FAILED test_torchbench.py::test_e2e[sam] - KeyError: 'pixel_mean'
-FAILED test_torchbench.py::test_e2e[timm_nfnet] - AssertionError: Tensor-likes are not close!
+FAILED test_torchbench.py::test_e2e[timm_nfnet] - AssertionError: Unsupported function types ['constant_pad_nd.default', '_native_batch_norm_legit.no_stats']
 FAILED test_torchbench.py::test_e2e[timm_resnest] - AssertionError: Tensor-likes are not close!
-FAILED test_torchbench.py::test_e2e[torch_multimodal_clip] - IndexError: ShapeExpr index out of range
-FAILED test_torchbench.py::test_e2e[tts_angular] - torch._dynamo.exc.UserError: Expecting `args` to be a tuple of example positional inputs, got <class 'list'>
-FAILED test_torchbench.py::test_e2e[yolov3] - AssertionError: Unsupported function types ['sigmoid_.default', 'meshgrid.default']
+FAILED test_torchbench.py::test_e2e[timm_vision_transformer] - AssertionError: Unsupported function types ['native_layer_norm.default']
+FAILED test_torchbench.py::test_e2e[timm_vision_transformer_large] - AssertionError: Unsupported function types ['native_layer_norm.default']
+FAILED test_torchbench.py::test_e2e[torch_multimodal_clip] - AssertionError: Unsupported function types ['native_layer_norm.default']
+FAILED test_torchbench.py::test_e2e[tts_angular] - AssertionError: Tensor-likes are not close!
+FAILED test_torchbench.py::test_e2e[yolov3] - AssertionError: Unsupported function types ['copy.default']
 ```
 
 ## TIMM
 
 ```bash
-pytest test_timm.py -v
+pytest test_timm.py -v -k "static" # only run static shape tests because dynamic shape tests take too long
 ```
 
 ```
-FAILED test_timm.py::test_e2e[adv_inception_v3] - AssertionError: Tensor-likes are not close!
-FAILED test_timm.py::test_e2e[beit_base_patch16_224] - KeyError: 'blocks.0.attn.k_bias'
-FAILED test_timm.py::test_e2e[convit_base] - AssertionError: Mutating module attribute rel_indices during export.
-FAILED test_timm.py::test_e2e[convmixer_768_32] - AssertionError: Unsupported function types ['conv2d.padding']
-FAILED test_timm.py::test_e2e[crossvit_9_240] - AssertionError: Unsupported function types ['upsample_bicubic2d.vec']
-FAILED test_timm.py::test_e2e[dm_nfnet_f0] - AssertionError: Tensor-likes are not close!
-FAILED test_timm.py::test_e2e[eca_halonext26ts] - AssertionError: Unsupported function types ['unfold.default']
-FAILED test_timm.py::test_e2e[gluon_inception_v3] - AssertionError: Tensor-likes are not close!
-FAILED test_timm.py::test_e2e[inception_v3] - AssertionError: Tensor-likes are not close!
-FAILED test_timm.py::test_e2e[jx_nest_base] - tvm._ffi.base.TVMError: Traceback (most recent call last):
-FAILED test_timm.py::test_e2e[levit_128] - KeyError: 'stages.0.blocks.0.attn.attention_bias_idxs'
-FAILED test_timm.py::test_e2e[mixer_b16_224] - AssertionError: Tensor-likes are not close!
-FAILED test_timm.py::test_e2e[nfnet_l0] - AssertionError: Tensor-likes are not close!
-FAILED test_timm.py::test_e2e[poolformer_m36] - AssertionError: Tensor-likes are not close!
-FAILED test_timm.py::test_e2e[res2net101_26w_4s] - AssertionError: Tensor-likes are not close!
-FAILED test_timm.py::test_e2e[res2net50_14w_8s] - AssertionError: Tensor-likes are not close!
-FAILED test_timm.py::test_e2e[res2next50] - AssertionError: Tensor-likes are not close!
-FAILED test_timm.py::test_e2e[resmlp_12_224] - AssertionError: Unsupported function types ['addcmul.default']
-FAILED test_timm.py::test_e2e[resnest101e] - AssertionError: Tensor-likes are not close!
-FAILED test_timm.py::test_e2e[swin_base_patch4_window7_224] - KeyError: 'layers.0.blocks.0.attn.relative_position_index'
-FAILED test_timm.py::test_e2e[tnt_s_patch16_224] - AssertionError: Unsupported function types ['im2col.default']
-FAILED test_timm.py::test_e2e[volo_d1_224] - AssertionError: Unsupported function types ['max.dim', 'col2im.default', 'im2col.default']
-FAILED test_timm.py::test_e2e[xcit_large_24_p8_224] - AssertionError: Unsupported function types ['div.Tensor_mode']
+FAILED test_timm.py::test_e2e[adv_inception_v3-static] - AssertionError: Tensor-likes are not close!
+FAILED test_timm.py::test_e2e[beit_base_patch16_224-static] - KeyError: 'blocks.0.attn.k_bias'
+FAILED test_timm.py::test_e2e[convit_base-static] - AssertionError: Unsupported function types ['div_.Tensor', 'repeat_interleave.self_int', 'to.device']
+FAILED test_timm.py::test_e2e[convmixer_768_32-static] - AssertionError: Unsupported function types ['conv2d.padding']
+FAILED test_timm.py::test_e2e[crossvit_9_240-static] - AssertionError: Unsupported function types ['alias.default']
+FAILED test_timm.py::test_e2e[dm_nfnet_f0-static] - AssertionError: Tensor-likes are not close!
+FAILED test_timm.py::test_e2e[eca_halonext26ts-static] - AssertionError: Unsupported function types ['unfold.default']
+FAILED test_timm.py::test_e2e[ghostnet_100-static] - AssertionError: Unsupported function types ['alias.default']
+FAILED test_timm.py::test_e2e[gluon_inception_v3-static] - AssertionError: Tensor-likes are not close!
+FAILED test_timm.py::test_e2e[inception_v3-static] - AssertionError: Tensor-likes are not close!
+FAILED test_timm.py::test_e2e[jx_nest_base-static] - tvm.error.InternalError: PermuteDims expects the number of input axes to equal the ndim of the input tensor. However, the tensor ndim is 5 while the given number of axes is 4
+FAILED test_timm.py::test_e2e[levit_128-static] - KeyError: 'stages.0.blocks.0.attn.attention_bias_idxs'
+FAILED test_timm.py::test_e2e[mixer_b16_224-static] - AssertionError: Tensor-likes are not close!
+FAILED test_timm.py::test_e2e[nfnet_l0-static] - AssertionError: Tensor-likes are not close!
+FAILED test_timm.py::test_e2e[poolformer_m36-static] - AssertionError: Tensor-likes are not close!
+FAILED test_timm.py::test_e2e[res2net101_26w_4s-static] - AssertionError: Tensor-likes are not close!
+FAILED test_timm.py::test_e2e[res2net50_14w_8s-static] - AssertionError: Tensor-likes are not close!
+FAILED test_timm.py::test_e2e[res2next50-static] - AssertionError: Tensor-likes are not close!
+FAILED test_timm.py::test_e2e[resmlp_12_224-static] - AssertionError: Unsupported function types ['addcmul.default']
+FAILED test_timm.py::test_e2e[resnest101e-static] - AssertionError: Tensor-likes are not close!
+FAILED test_timm.py::test_e2e[swin_base_patch4_window7_224-static] - KeyError: 'layers.0.blocks.0.attn.relative_position_index'
+FAILED test_timm.py::test_e2e[tnt_s_patch16_224-static] - AssertionError: Unsupported function types ['im2col.default']
+FAILED test_timm.py::test_e2e[volo_d1_224-static] - AssertionError: Unsupported function types ['im2col.default', 'max.dim', 'col2im.default']
+FAILED test_timm.py::test_e2e[xcit_large_24_p8_224-static] - TypeError: Binary operators must have the same datatype for both operands.  However, R.floor_divide(lv29, R.const(2, "int32")) uses datatype float32 on the LHS (StructInfo of R.Tensor((32,), dtype="float32")), and datatype i...
 ```
 
 ## (wip) sam2
@@ -136,14 +143,14 @@ cd test_sam2
 git clone https://github.com/facebookresearch/sam2.git sam2_repo
 cd sam2_repo
 uv pip install -e .
-cd ../checkpoints/
+cd checkpoints
 bash download_ckpts.sh
 cd ../../
 uv run test_sam2.py
 ```
 
 ```
-AssertionError: Unsupported function types ['sym_size.int', 'upsample_bicubic2d.vec', 'mul']
+AssertionError: Unsupported function types ['mul', 'sym_size.int', 'native_layer_norm.default']
 ```
 
 ## nanoGPT
@@ -154,7 +161,7 @@ pytest test_nanogpt.py -v
 ```
 
 ```
-FAILED test_nanogpt.py::test_nanpgpt - AssertionError: Unsupported function types ['sym_size.int']
+FAILED test_nanogpt.py::test_nanpgpt - AssertionError: Unsupported function types ['native_layer_norm.default', 'sym_size.int']
 ```
 
 ## Ideas
