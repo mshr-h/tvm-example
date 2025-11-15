@@ -21,7 +21,7 @@ def test_nanpgpt():
     expected: torch.Tensor = exported_program.module()(*example_args)
 
     # Relax
-    mod = from_exported_program(exported_program)
+    mod = from_exported_program(exported_program, run_ep_decomposition=True)
     mod = tvm.relax.transform.DecomposeOpsForInference()(mod)
     dev = tvm.cpu()
     target = tvm.target.Target.from_device(dev)
