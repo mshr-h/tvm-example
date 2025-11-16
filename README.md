@@ -164,6 +164,53 @@ pytest test_nanogpt.py -v
 FAILED test_nanogpt.py::test_nanpgpt - AssertionError: Unsupported function types ['native_layer_norm.default', 'sym_size.int']
 ```
 
+## nanochat
+
+```bash
+cd test_nanochat
+git clone https://github.com/karpathy/nanochat
+pytest test_nanochat.py -v
+```
+
+```
+    def create_input_vars(
+        self, exported_program: torch.export.ExportedProgram
+    ) -> Tuple[Dict[str, relax.Var], Dict[str, relax.Var], Dict[str, Tuple[int, int]]]:
+        """Create relax input vars."""
+        parameters_buffers_constants = OrderedDict()
+        user_inputs = OrderedDict()
+        torch_symbol_to_relax_var: Dict[str, tvm.tir.Var] = {}
+        range_constraints = {}
+    
+        if hasattr(exported_program, "range_constraints"):
+            for symbol, value_range in exported_program.range_constraints.items():
+                symbol_name = str(symbol)
+                if hasattr(value_range, "lower") and hasattr(value_range, "upper"):
+                    try:
+                        lower = int(value_range.lower)
+                        upper = int(value_range.upper)
+                        range_constraints[symbol_name] = (lower, upper)
+                    except (OverflowError, AttributeError, TypeError):
+                        continue
+    
+        for spec in exported_program.graph_signature.input_specs:
+            name_hint = spec.arg.name
+            if spec.kind is torch.export.graph_signature.InputKind.CONSTANT_TENSOR:
+                torch_shape = exported_program.tensor_constants[spec.target].shape
+                torch_dtype = exported_program.tensor_constants[spec.target].dtype
+            elif spec.kind is torch.export.graph_signature.InputKind.USER_INPUT:
+                for node in exported_program.graph.find_nodes(op="placeholder", target=spec.target):
+                    if node.name == name_hint and "tensor_meta" in node.meta:
+                        torch_shape = node.meta["tensor_meta"].shape
+                        torch_dtype = node.meta["tensor_meta"].dtype
+                        break
+            else:
+                # PARAMETER or BUFFER
+>               torch_shape = exported_program.state_dict[spec.target].shape
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               KeyError: 'gpt.cos'
+```
+
 ## Ideas
 
 - TorchInductor Performance DashBoard (aot_inductor)
