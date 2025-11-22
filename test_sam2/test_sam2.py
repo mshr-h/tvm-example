@@ -9,7 +9,7 @@ from tvm import relax
 
 from tvm.relax.frontend.torch import from_exported_program
 
-def main():
+def test_sam2():
     sam2_checkpoint = "./sam2_repo/checkpoints/sam2.1_hiera_large.pt"
     model_cfg = "configs/sam2.1/sam2.1_hiera_l.yaml"
     device = "cpu"
@@ -33,16 +33,30 @@ def main():
         "sample": {0: batch_size},
     }
 
+    # PyTorch
     with torch.no_grad():
-        ep_module = torch.export.export(
+        exported_program = torch.export.export(
             torch_model,
             (example_args,),
             dynamic_shapes=dynamic_shapes,
             strict=False,
         )
 
-    mod = from_exported_program(ep_module, run_ep_decomposition=True)
+    mod = from_exported_program(exported_program)
+    expected: torch.Tensor = exported_program.module()(*example_args)
+
+    # Relax
+    dev = tvm.cpu()
+    target = tvm.target.Target.from_device(dev)
+
+    mod = from_exported_program(exported_program)
+    mod = tvm.relax.transform.DecomposeOpsForInference()(mod)
+    exe = tvm.compile(mod, target=target)
+    vm = relax.VirtualMachine(exe, dev)
+    tvm_args = [tvm.runtime.from_dlpack(x.contiguous()) for x in example_args]
+    tvm_outputs = vm["main"](*tvm_args)
+
 
 
 if __name__ == "__main__":
-    main()
+    test_sam2()
