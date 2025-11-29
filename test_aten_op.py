@@ -8,6 +8,7 @@ import tvm
 from tvm import relax
 import tvm.testing
 from tvm.relax.frontend.torch import from_exported_program
+from torch.nn.attention import sdpa_kernel, SDPBackend
 
 
 def verify_model(
@@ -28,23 +29,31 @@ def verify_model(
     original_example_args = copy.deepcopy(example_args)
 
     # PyTorch
-    exported_program = export(
-        torch_model,
-        args=example_args,
-        kwargs=example_kwargs,
-        dynamic_shapes=dynamic_shapes,
-    )
+    with torch.inference_mode(), sdpa_kernel([SDPBackend.MATH]):
+        exported_program = export(
+            torch_model,
+            args=example_args,
+            kwargs=example_kwargs,
+            dynamic_shapes=dynamic_shapes,
+        )
     if verbose:
         print("Exported Program:")
+        print(exported_program)
+    exported_program = exported_program.run_decompositions()
+    if verbose:
+        print("Decomposed Exported Program:")
         print(exported_program)
     expected: torch.Tensor = exported_program.module()(*example_args)
 
     # Relax
-    mod = from_exported_program(exported_program)
+    mod = from_exported_program(exported_program, run_ep_decomposition=False)
     if verbose:
         print("Relax Module:")
         print(mod)
     mod = tvm.relax.transform.DecomposeOpsForInference()(mod)
+    if verbose:
+        print("Decomposed Relax Module:")
+        print(mod)
     exe = tvm.compile(mod, target=target)
     vm = relax.VirtualMachine(exe, dev)
     tvm_args = [tvm.runtime.from_dlpack(x.contiguous()) for x in original_example_args]
@@ -326,6 +335,23 @@ def test_dynamic_output():
         }
     }
     verify_model(Flatten().eval(), example_args, dynamic_shapes=dynamic_shapes)
+
+
+def test_sdpa():
+    example_args = (
+        torch.randn(2, 4, 8, 16, dtype=torch.float32),
+        torch.randn(2, 4, 16, 16, dtype=torch.float32),
+        torch.randn(2, 4, 16, 16, dtype=torch.float32),
+    )
+
+    class SDPA(torch.nn.Module):
+        def forward(self, q, k, v):
+            return torch.ops.aten.scaled_dot_product_attention(
+                q, k, v, None, False, 0.0
+            )
+
+    verify_model(SDPA().eval(), example_args, verbose=True)
+
 
 def test_register_buffer():
     class ModelWithBuffer(torch.nn.Module):
