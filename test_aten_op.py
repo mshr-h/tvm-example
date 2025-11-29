@@ -327,6 +327,18 @@ def test_dynamic_output():
     }
     verify_model(Flatten().eval(), example_args, dynamic_shapes=dynamic_shapes)
 
+def test_register_buffer():
+    class ModelWithBuffer(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.register_buffer("my_buffer", torch.randn(3, 4), persistent=False)
+
+        def forward(self, x):
+            return x + self.my_buffer
+
+    example_args = (torch.randn(2, 3, 4),)
+    verify_model(ModelWithBuffer().eval(), example_args, verbose=True)
+
 
 if __name__ == "__main__":
     tvm.testing.main()
