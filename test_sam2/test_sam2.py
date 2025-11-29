@@ -9,6 +9,7 @@ from tvm import relax
 
 from tvm.relax.frontend.torch import from_exported_program
 
+
 def test_sam2():
     sam2_checkpoint = "./sam2_repo/checkpoints/sam2.1_hiera_large.pt"
     model_cfg = "configs/sam2.1/sam2.1_hiera_l.yaml"
@@ -19,11 +20,9 @@ def test_sam2():
     predictor = SAM2ImagePredictor(sam2_model)
     # torch_model = predictor.model.image_encoder.eval()
     torch_model = predictor.model.image_encoder.bfloat16().eval()
-    img_size=1024
+    img_size = 1024
 
-    example_args = (
-        torch.randn(5, 3, img_size, img_size).to(device).type(torch.bfloat16)
-    )
+    example_args = torch.randn(5, 3, img_size, img_size).to(device).type(torch.bfloat16)
 
     # dynamic shapes
     batch_size = Dim("batch", min=2, max=20)
@@ -55,7 +54,6 @@ def test_sam2():
     vm = relax.VirtualMachine(exe, dev)
     tvm_args = [tvm.runtime.from_dlpack(x.contiguous()) for x in example_args]
     tvm_outputs = vm["main"](*tvm_args)
-
 
 
 if __name__ == "__main__":

@@ -21,7 +21,9 @@ def verify_model(
         target = tvm.target.Target.from_device(dev)
 
     # PyTorch
-    exported_program = export(torch_model, args=tuple(example_args), kwargs=example_kwargs)
+    exported_program = export(
+        torch_model, args=tuple(example_args), kwargs=example_kwargs
+    )
     expected = exported_program.module()(*example_args)
 
     # Relax

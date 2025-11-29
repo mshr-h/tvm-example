@@ -9,6 +9,7 @@ from torch.nn.attention import SDPBackend
 
 def test_nanpgpt():
     model = GPT.from_pretrained("gpt2")
+
     # Monkey-patch forward to avoid negative indexing (x[:, [-1], :]) which
     # generates out-of-bounds gathers in TVM lowering.
     def _forward_no_neg(self, idx, targets=None):
@@ -27,7 +28,9 @@ def test_nanpgpt():
         if targets is not None:
             logits_full = self.lm_head(x)
             loss = F.cross_entropy(
-                logits_full.view(-1, logits_full.size(-1)), targets.view(-1), ignore_index=-1
+                logits_full.view(-1, logits_full.size(-1)),
+                targets.view(-1),
+                ignore_index=-1,
             )
             logits = logits_full[:, t - 1 : t, :]
         return logits, loss
@@ -35,16 +38,14 @@ def test_nanpgpt():
     model.forward = _forward_no_neg.__get__(model, GPT)
 
     seq_len = 32
-    example_args = (
-        torch.randint(0, 100, (1, seq_len), dtype=torch.long),
-    )
-    dynamic_shape = (
-        {1: torch.export.Dim("token_dim", max=model.config.block_size)},
-    )
+    example_args = (torch.randint(0, 100, (1, seq_len), dtype=torch.long),)
+    dynamic_shape = ({1: torch.export.Dim("token_dim", max=model.config.block_size)},)
 
     # PyTorch
     with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
-        exported_program = torch.export.export(model, example_args, dynamic_shapes=dynamic_shape)
+        exported_program = torch.export.export(
+            model, example_args, dynamic_shapes=dynamic_shape
+        )
     expected: torch.Tensor = exported_program.module()(*example_args)
 
     # Relax
@@ -56,9 +57,9 @@ def test_nanpgpt():
     vm = relax.VirtualMachine(exe, dev)
     # The Relax graph keeps lm_head.weight as a runtime parameter (p_lm_head_weight).
     # Pass it explicitly to match the PyTorch execution.
-    tvm_args = [
-        tvm.runtime.from_dlpack(x.contiguous()) for x in example_args
-    ] + [tvm.runtime.from_dlpack(model.lm_head.weight.detach().contiguous())]
+    tvm_args = [tvm.runtime.from_dlpack(x.contiguous()) for x in example_args] + [
+        tvm.runtime.from_dlpack(model.lm_head.weight.detach().contiguous())
+    ]
     tvm_outputs = vm["main"](*tvm_args)
 
     # check if the outputs match
@@ -75,13 +76,18 @@ def test_nanpgpt():
                 assert actual is None
             else:
                 torch.testing.assert_close(
-                    torch.from_numpy(actual.numpy()), exp, rtol=1e-4, atol=1e-4, equal_nan=True
+                    torch.from_numpy(actual.numpy()),
+                    exp,
+                    rtol=1e-4,
+                    atol=1e-4,
+                    equal_nan=True,
                 )
     else:
         actuals = torch.from_numpy(tvm_outputs[0].numpy())
         torch.testing.assert_close(
             actuals, expected, rtol=1e-4, atol=1e-4, equal_nan=True
         )
+
 
 if __name__ == "__main__":
     test_nanpgpt()
