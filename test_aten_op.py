@@ -39,10 +39,6 @@ def verify_model(
     if verbose:
         print("Exported Program:")
         print(exported_program)
-    exported_program = exported_program.run_decompositions()
-    if verbose:
-        print("Decomposed Exported Program:")
-        print(exported_program)
     expected: torch.Tensor = exported_program.module()(*example_args)
 
     # Relax
@@ -360,7 +356,16 @@ def test_sdpa():
                 q, k, v, None, False, 0.0
             )
 
+    class SDPA2D(torch.nn.Module):
+        def forward(self, x):
+            return torch.nn.functional.scaled_dot_product_attention(
+                x, x, x, is_causal=False
+            )
+
     verify_model(SDPA().eval(), example_args, verbose=True)
+
+    example_args = (torch.randn(8, 32, dtype=torch.float32),)
+    verify_model(SDPA2D().eval(), example_args, verbose=True)
 
 
 def test_register_buffer():
