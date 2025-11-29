@@ -376,5 +376,15 @@ def test_register_buffer():
     verify_model(ModelWithBuffer().eval(), example_args, verbose=True)
 
 
+def test_any():
+    example_args = (torch.tensor([[0, 0, 0], [0, 1, 0]], dtype=torch.bool),)
+
+    class AnyAten(torch.nn.Module):
+        def forward(self, x):
+            return torch.ops.aten.any(x, dim=1)
+
+    verify_model(AnyAten().eval(), example_args)
+
+
 if __name__ == "__main__":
     tvm.testing.main()
