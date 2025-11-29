@@ -20,6 +20,7 @@ def verify_model(
     rtol=None,
     atol=None,
     equal_nan=True,
+    verbose=False,
 ):
     if target is None:
         target = tvm.target.Target.from_device(dev)
@@ -33,10 +34,16 @@ def verify_model(
         kwargs=example_kwargs,
         dynamic_shapes=dynamic_shapes,
     )
+    if verbose:
+        print("Exported Program:")
+        print(exported_program)
     expected: torch.Tensor = exported_program.module()(*example_args)
 
     # Relax
     mod = from_exported_program(exported_program)
+    if verbose:
+        print("Relax Module:")
+        print(mod)
     mod = tvm.relax.transform.DecomposeOpsForInference()(mod)
     exe = tvm.compile(mod, target=target)
     vm = relax.VirtualMachine(exe, dev)
@@ -289,6 +296,36 @@ def test_flatten():
             return torch.ops.aten.flatten(x, 1)
 
     verify_model(FlattenAten().eval(), example_args)
+
+
+def test_dynamic_output():
+    class DynamicReshape(torch.nn.Module):
+        def forward(self, x):
+            # Get the batch size dynamically - this creates sym_size.int calls
+            batch_size = x.shape[0]
+            return x.reshape(batch_size, -1)
+
+    example_args = (torch.randn(3, 4, 5),)
+    dynamic_shapes = {"x": {0: torch.export.Dim("batch")}}
+    verify_model(
+        DynamicReshape().eval(),
+        example_args,
+        dynamic_shapes=dynamic_shapes,
+    )
+
+    class Flatten(torch.nn.Module):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return x.flatten()
+
+    example_args = (torch.randn(3, 4, 5),)
+    dynamic_shapes = {
+        "x": {
+            0: torch.export.Dim("batch"),
+            1: torch.export.Dim("height"),
+            2: torch.export.Dim("width"),
+        }
+    }
+    verify_model(Flatten().eval(), example_args, dynamic_shapes=dynamic_shapes)
 
 
 if __name__ == "__main__":
