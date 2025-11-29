@@ -156,48 +156,25 @@ FAILED test_nanogpt.py::test_nanpgpt - tvm.error.InternalError: Cannot decide mi
 ## nanochat
 
 ```bash
-cd test_nanochat
-git clone https://github.com/karpathy/nanochat
 uv run pytest test_nanochat.py -v
 ```
 
 ```
-    def create_input_vars(
-        self, exported_program: torch.export.ExportedProgram
-    ) -> Tuple[Dict[str, relax.Var], Dict[str, relax.Var], Dict[str, Tuple[int, int]]]:
-        """Create relax input vars."""
-        parameters_buffers_constants = OrderedDict()
-        user_inputs = OrderedDict()
-        torch_symbol_to_relax_var: Dict[str, tvm.tir.Var] = {}
-        range_constraints = {}
-    
-        if hasattr(exported_program, "range_constraints"):
-            for symbol, value_range in exported_program.range_constraints.items():
-                symbol_name = str(symbol)
-                if hasattr(value_range, "lower") and hasattr(value_range, "upper"):
-                    try:
-                        lower = int(value_range.lower)
-                        upper = int(value_range.upper)
-                        range_constraints[symbol_name] = (lower, upper)
-                    except (OverflowError, AttributeError, TypeError):
-                        continue
-    
-        for spec in exported_program.graph_signature.input_specs:
-            name_hint = spec.arg.name
-            if spec.kind is torch.export.graph_signature.InputKind.CONSTANT_TENSOR:
-                torch_shape = exported_program.tensor_constants[spec.target].shape
-                torch_dtype = exported_program.tensor_constants[spec.target].dtype
-            elif spec.kind is torch.export.graph_signature.InputKind.USER_INPUT:
-                for node in exported_program.graph.find_nodes(op="placeholder", target=spec.target):
-                    if node.name == name_hint and "tensor_meta" in node.meta:
-                        torch_shape = node.meta["tensor_meta"].shape
-                        torch_dtype = node.meta["tensor_meta"].dtype
-                        break
-            else:
-                # PARAMETER or BUFFER
->               torch_shape = exported_program.state_dict[spec.target].shape
-                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E               KeyError: 'gpt.cos'
+Traceback (most recent call last):
+  File "/home/ubuntu/data/project/exportedprogram-to-tvm-relax/test_nanochat.py", line 283, in <module>
+    test_nanochat()
+  File "/home/ubuntu/data/project/exportedprogram-to-tvm-relax/test_nanochat.py", line 255, in test_nanochat
+    mod = from_exported_program(exported_program, run_ep_decomposition=True)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/data/project/exportedprogram-to-tvm-relax/3rdparty/tvm/python/tvm/relax/frontend/torch/exported_program_translator.py", line 1784, in from_exported_program
+    return ExportedProgramImporter().from_exported_program(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/data/project/exportedprogram-to-tvm-relax/3rdparty/tvm/python/tvm/relax/frontend/torch/exported_program_translator.py", line 1643, in from_exported_program
+    self._check_unsupported_func_type(nodes)
+  File "/home/ubuntu/data/project/exportedprogram-to-tvm-relax/3rdparty/tvm/python/tvm/relax/frontend/torch/base_fx_graph_translator.py", line 182, in _check_unsupported_func_type
+    assert not missing_func_types, f"Unsupported function types {missing_func_types}"
+           ^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Unsupported function types ['add.Scalar']
 ```
 
 ## Ideas

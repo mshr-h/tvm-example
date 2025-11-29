@@ -281,23 +281,3 @@ def test_nanochat():
 
 if __name__ == "__main__":
     test_nanochat()
-
-"""
-$ python test_nanochat.py 
-Traceback (most recent call last):
-  File "/home/ubuntu/data/project/exportedprogram-to-tvm-relax/test_nanochat/test_nanochat.py", line 88, in <module>
-    test_nanochat()
-  File "/home/ubuntu/data/project/exportedprogram-to-tvm-relax/test_nanochat/test_nanochat.py", line 64, in test_nanochat
-    mod = from_exported_program(exported_program, run_ep_decomposition=True)
-          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ubuntu/data/project/exportedprogram-to-tvm-relax/3rdparty/tvm/python/tvm/relax/frontend/torch/exported_program_translator.py", line 1341, in from_exported_program
-    return ExportedProgramImporter().from_exported_program(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ubuntu/data/project/exportedprogram-to-tvm-relax/3rdparty/tvm/python/tvm/relax/frontend/torch/exported_program_translator.py", line 1173, in from_exported_program
-    ) = self.create_input_vars(exported_program)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ubuntu/data/project/exportedprogram-to-tvm-relax/3rdparty/tvm/python/tvm/relax/frontend/torch/exported_program_translator.py", line 1139, in create_input_vars
-    torch_shape = exported_program.state_dict[spec.target].shape
-                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
-KeyError: 'gpt.cos'
-"""
