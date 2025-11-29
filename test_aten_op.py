@@ -157,6 +157,16 @@ operator_binary_inplace = [
 ]
 
 
+def test_add_scalar():
+    example_args = (torch.randn(1, 3, 10, 10, dtype=torch.float32),)
+
+    class AddScalar(torch.nn.Module):
+        def forward(self, input):
+            return torch.ops.aten.add.Scalar(input, 5.0)
+
+    verify_model(AddScalar().eval(), example_args)
+
+
 @pytest.mark.parametrize("pytorch_op", operator_binary_inplace)
 def test_binary_op_inplace(pytorch_op):
     example_args = (
