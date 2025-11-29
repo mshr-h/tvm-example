@@ -177,6 +177,60 @@ Traceback (most recent call last):
 AssertionError: Unsupported function types ['add.Scalar']
 ```
 
+## llm-jp-3
+
+```bash
+uv run pytest test_llm-jp-3.py -v -s
+```
+
+```
+3rdparty/tvm/python/tvm/relax/frontend/torch/exported_program_translator.py:1786: in from_exported_program
+    return ExportedProgramImporter().from_exported_program(
+3rdparty/tvm/python/tvm/relax/frontend/torch/exported_program_translator.py:1678: in from_exported_program
+    self.env[node] = self.convert_map[func_name](node)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+3rdparty/tvm/python/tvm/relax/frontend/torch/base_fx_graph_translator.py:1819: in _index_put
+    return self.block_builder.emit(relax.op.index_put(tensor, indices, values, accumulate))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+3rdparty/tvm/python/tvm/relax/block_builder.py:328: in emit
+    return _ffi_api.BlockBuilderEmit(self, expr, name_hint)  # type: ignore
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+python/tvm_ffi/cython/function.pxi:904: in tvm_ffi.core.Function.__call__
+    ???
+<unknown>:0: in tvm::relax::BlockBuilderImpl::Emit(tvm::RelaxExpr, tvm::ffi::String)
+    ???
+<unknown>:0: in tvm::relax::BlockBuilderImpl::Emit(tvm::RelaxExpr, bool, tvm::ffi::String)
+    ???
+<unknown>:0: in tvm::relax::Normalizer::Normalize(tvm::RelaxExpr const&)
+    ???
+<unknown>:0: in tvm::relax::Normalizer::VisitExpr(tvm::RelaxExpr const&)
+    ???
+<unknown>:0: in tvm::relax::ExprFunctor<tvm::RelaxExpr (tvm::RelaxExpr const&)>::VisitExpr(tvm::RelaxExpr const&)
+    ???
+<unknown>:0: in tvm::NodeFunctor<tvm::RelaxExpr (tvm::ffi::ObjectRef const&, tvm::relax::ExprFunctor<tvm::RelaxExpr (tvm::RelaxExpr const&)>*)>::operator()(tvm::ffi::ObjectRef const&, tvm::relax::ExprFunctor<tvm::RelaxExpr (tvm::RelaxExpr const&)>*) const
+    ???
+<unknown>:0: in tvm::relax::ExprFunctor<tvm::RelaxExpr (tvm::RelaxExpr const&)>::InitVTable()::{lambda(tvm::ffi::ObjectRef const&, tvm::relax::ExprFunctor<tvm::RelaxExpr (tvm::RelaxExpr const&)>*)#9}::__invoke(tvm::ffi::ObjectRef const&, tvm::relax::ExprFunctor<tvm::RelaxExpr (tvm::RelaxExpr const&)>*)
+    ???
+<unknown>:0: in non-virtual thunk to tvm::relax::Normalizer::VisitExpr_(tvm::relax::CallNode const*)
+    ???
+<unknown>:0: in tvm::relax::Normalizer::VisitExpr_(tvm::relax::CallNode const*)
+    ???
+<unknown>:0: in tvm::relax::Normalizer::InferStructInfo(tvm::relax::Call const&)
+    ???
+<unknown>:0: in tvm::relax::InferStructInfoIndexPut(tvm::relax::Call const&, tvm::relax::BlockBuilder const&)
+    ???
+<unknown>:0: in tvm::relax::BlockBuilderImpl::ReportFatal(tvm::Diagnostic const&)
+    ???
+<unknown>:0: in tvm::runtime::detail::LogFatal::~LogFatal()
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+>   ???
+E   tvm.error.InternalError: IndexPut requires the number of index tensors (3) to match the data tensor dimensions (4)
+
+<unknown>:0: InternalError
+```
+
 ## Ideas
 
 - TorchInductor Performance DashBoard (aot_inductor)
