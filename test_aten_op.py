@@ -1,14 +1,14 @@
-import torch
-from torch.export import export, Dim
-import pytest
-from typing import Optional
 import copy
+from typing import Optional
 
+import pytest
+import torch
 import tvm
-from tvm import relax
 import tvm.testing
+from torch.export import export
+from torch.nn.attention import SDPBackend, sdpa_kernel
+from tvm import relax
 from tvm.relax.frontend.torch import from_exported_program
-from torch.nn.attention import sdpa_kernel, SDPBackend
 
 
 def verify_model(
@@ -22,6 +22,7 @@ def verify_model(
     atol=None,
     equal_nan=True,
     verbose=False,
+    run_ep_decomposition=True,
 ):
     if target is None:
         target = tvm.target.Target.from_device(dev)
@@ -42,7 +43,9 @@ def verify_model(
     expected: torch.Tensor = exported_program.module()(*example_args)
 
     # Relax
-    mod = from_exported_program(exported_program, run_ep_decomposition=False)
+    mod = from_exported_program(
+        exported_program, run_ep_decomposition=run_ep_decomposition
+    )
     if verbose:
         print("Relax Module:")
         print(mod)
@@ -357,15 +360,21 @@ def test_sdpa():
             )
 
     class SDPA2D(torch.nn.Module):
-        def forward(self, x):
+        def forward(self, x, y, z):
             return torch.nn.functional.scaled_dot_product_attention(
-                x, x, x, is_causal=False
+                x, y, z, is_causal=False
             )
 
-    verify_model(SDPA().eval(), example_args, verbose=True)
+    verify_model(SDPA().eval(), example_args, verbose=True, run_ep_decomposition=False)
 
-    example_args = (torch.randn(8, 32, dtype=torch.float32),)
-    verify_model(SDPA2D().eval(), example_args, verbose=True)
+    example_args = (
+        torch.randn(8, 32, dtype=torch.float32),
+        torch.randn(8, 32, dtype=torch.float32),
+        torch.randn(8, 32, dtype=torch.float32),
+    )
+    verify_model(
+        SDPA2D().eval(), example_args, verbose=True, run_ep_decomposition=False
+    )
 
 
 def test_register_buffer():
