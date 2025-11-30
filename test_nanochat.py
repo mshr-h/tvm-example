@@ -1,13 +1,14 @@
-import os
-import sys
+import argparse
 import json
-import torch
-from huggingface_hub import hf_hub_download
-from tvm.relax.frontend.torch import from_exported_program
-import tvm
-from tvm import relax
-from dataclasses import dataclass
 import math
+from dataclasses import dataclass
+
+import torch
+import torch._decomp
+import tvm
+from huggingface_hub import hf_hub_download
+from tvm import relax
+from tvm.relax.frontend.torch import from_exported_program
 
 
 @dataclass
@@ -199,7 +200,17 @@ class GPT(torch.nn.Module):
 
 
 def test_nanochat():
-    repo_id = "karpathy/nanochat-d32"
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--target",
+        type=str,
+        default="llvm -keys=cpu -mcpu=znver4 -mtriple=x86_64-pc-linux-gnu -num-cores=24",
+    )
+    parser.add_argument("--num-trials", type=int, default=8000)
+    parser.add_argument("--device", type=str, choices=["cpu", "cuda"], default="cpu")
+    args = parser.parse_args()
+
+    repo_id = "sdobson/nanochat"
     model_file = "model_000650.pt"
     meta_file = "meta_000650.json"
 
@@ -250,14 +261,33 @@ def test_nanochat():
         example_args,
     )
 
+    # Those ops are not yet supported in TVM, so we decompose them here
+    decomp_table = torch._decomp.get_decompositions(
+        (
+            torch.ops.aten.rms_norm.default,
+            torch.ops.aten._scaled_dot_product_flash_attention_for_cpu.default,
+            torch.ops.aten.t.default,
+            torch.ops.aten._safe_softmax.default,
+            torch.ops.aten.all.dim,
+        )
+    )
+    exported_program = exported_program.run_decompositions(decomp_table=decomp_table)
+
     # Relax
-    print("Running Relax model...")
-    mod = from_exported_program(exported_program, run_ep_decomposition=True)
+    tvm_device = tvm.cpu() if args.device == "cpu" else tvm.cuda()
+    target = tvm.target.Target(args.target)
+    print("Converting ExportedProgram to Relax model...")
+    mod = from_exported_program(exported_program, run_ep_decomposition=False)
     mod = tvm.relax.transform.DecomposeOpsForInference()(mod)
-    dev = tvm.cpu()
-    target = tvm.target.Target.from_device(dev)
-    exe = tvm.compile(mod, target=target)
-    vm = relax.VirtualMachine(exe, dev)
+
+    print("Compiling Relax module...")
+    pipeline = tvm.relax.get_pipeline(
+        "static_shape_tuning", total_trials=args.num_trials, target=target
+    )
+    exe = tvm.compile(mod, target=target, relax_pipeline=pipeline)
+
+    print("Running Relax model...")
+    vm = relax.VirtualMachine(exe, tvm_device)
     tvm_args = [tvm.runtime.from_dlpack(x.contiguous()) for x in example_args]
     tvm_outputs = vm["main"](*tvm_args)
 
