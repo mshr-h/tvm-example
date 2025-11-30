@@ -156,7 +156,7 @@ FAILED test_nanogpt.py::test_nanpgpt - tvm.error.InternalError: Cannot decide mi
 ## nanochat
 
 ```bash
-uv run pytest test_nanochat.py -v
+uv run test_nanochat.py
 ```
 
 ```
