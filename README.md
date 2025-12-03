@@ -1,6 +1,6 @@
-# exportedprogram-to-tvm-relax
+# tvm-example
 
-Collections of PyTorch ExportedProgram to TVM Relax translation example.
+Collections of Apache TVM example.
 
 ## Prerequisite
 
@@ -18,7 +18,11 @@ cd 3rdparty
 ./build-tvm.sh --clean --llvm llvm-config # change if you want to use different llvm version
 ```
 
-## torchvision
+## frontend
+
+PyTorch ExportedProgram to TVM Relax translation.
+
+### torchvision
 
 ```bash
 uv run pytest test_torchvision.py -v
@@ -30,7 +34,7 @@ FAILED test_torchvision.py::test_e2e[swin_v2_t-dynamic] - TypeError: 'NoneType' 
 FAILED test_torchvision.py::test_e2e[lraspp_mobilenet_v3_large-dynamic] - torch._dynamo.exc.UserError: When `dynamic_shapes` is specified as a dict, its top-level keys must be the arg names ['input'] of `inputs`, but here they are ['x']. Alternatively, you could also ignore arg na...
 ```
 
-## torchbench
+### torchbench
 
 ```bash
 cd test_torchbench
@@ -92,7 +96,7 @@ FAILED test_torchbench.py::test_e2e[tts_angular] - AssertionError: Tensor-likes 
 FAILED test_torchbench.py::test_e2e[yolov3] - AssertionError: Unsupported function types ['copy.default']
 ```
 
-## TIMM
+### TIMM
 
 ```bash
 pytest test_timm.py -v -k "static" # only run static shape tests because dynamic shape tests take too long
@@ -125,7 +129,7 @@ FAILED test_timm.py::test_e2e[volo_d1_224-static] - AssertionError: Unsupported 
 FAILED test_timm.py::test_e2e[xcit_large_24_p8_224-static] - TypeError: Binary operators must have the same datatype for both operands.  However, R.floor_divide(lv29, R.const(2, "int32")) uses datatype float32 on the LHS (StructInfo of R.Tensor((32,), dtype="float32")), and datatype i...
 ```
 
-## (wip) sam2
+### (wip) sam2
 
 ```bash
 cd test_sam2
@@ -142,7 +146,7 @@ uv run test_sam2.py
 AssertionError: Unsupported function types ['mul']
 ```
 
-## nanoGPT
+### nanoGPT
 
 ```bash
 cd test_nanogpt
@@ -153,7 +157,7 @@ uv run pytest test_nanogpt.py -v
 FAILED test_nanogpt.py::test_nanpgpt - tvm.error.InternalError: Cannot decide min_value for typebool
 ```
 
-## nanochat
+### nanochat
 
 ```bash
 uv run test_nanochat.py
@@ -177,7 +181,7 @@ Traceback (most recent call last):
 AssertionError: Unsupported function types ['add.Scalar']
 ```
 
-## llm-jp-3
+### llm-jp-3
 
 ```bash
 uv run pytest test_llm-jp-3.py -v -s
@@ -231,7 +235,7 @@ E   tvm.error.InternalError: IndexPut requires the number of index tensors (3) t
 <unknown>:0: InternalError
 ```
 
-## Ideas
+### Ideas
 
 - TorchInductor Performance DashBoard (aot_inductor)
   - torchbench
