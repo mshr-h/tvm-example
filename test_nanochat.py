@@ -2,12 +2,15 @@ import argparse
 import json
 import math
 from dataclasses import dataclass
+from typing import List
 
 import torch
 import torch._decomp
 import tvm
 from huggingface_hub import hf_hub_download
-from tvm import relax
+from tvm import dlight, relax
+from tvm.relax import register_pipeline
+from tvm.relax.frontend import nn
 from tvm.relax.frontend.torch import from_exported_program
 
 
@@ -199,6 +202,58 @@ class GPT(torch.nn.Module):
         return logits
 
 
+@register_pipeline("opt_llm")
+def _pipeline(  # pylint: disable=too-many-arguments
+    ext_mods: List[nn.ExternModule] = None,
+):
+    ext_mods = ext_mods or []
+
+    @tvm.transform.module_pass(opt_level=0)
+    def _pipeline(
+        mod: tvm.ir.IRModule, _ctx: tvm.transform.PassContext
+    ) -> tvm.ir.IRModule:
+        seq = tvm.transform.Sequential(
+            [
+                # Phase 1. Passes on high-level operator graph
+                # We can enable cublas for further optimization
+                relax.transform.FuseTransposeMatmul(),
+                # Phase 2. Lowering to TIR, inherited TVM Relax's official "zero" pipeline
+                relax.transform.LegalizeOps(),
+                relax.transform.AnnotateTIROpPattern(),
+                relax.transform.FoldConstant(),
+                relax.transform.FuseOps(),
+                relax.transform.FuseTIR(),
+                # Phase 3. Passes on TIR
+                relax.transform.DeadCodeElimination(),
+                # Phase 4. Low-level Optimizations
+                dlight.ApplyDefaultSchedule(
+                    dlight.gpu.Matmul(),
+                    dlight.gpu.GEMV(),
+                    dlight.gpu.Reduction(),
+                    dlight.gpu.GeneralReduction(),
+                    dlight.gpu.Fallback(),
+                ),
+                # Phase 5. Lowering to VM bytecode
+                relax.transform.RewriteDataflowReshape(),
+                relax.transform.ToNonDataflow(),
+                relax.transform.RemovePurityChecking(),
+                relax.transform.CallTIRRewrite(),
+                relax.transform.StaticPlanBlockMemory(),
+                relax.transform.RewriteCUDAGraph(),
+                relax.transform.LowerAllocTensor(),
+                relax.transform.KillAfterLastUse(),
+                relax.transform.LowerRuntimeBuiltin(),
+                relax.transform.VMShapeLower(),
+                relax.transform.AttachGlobalSymbol(),
+                relax.transform.AttachExternModules(ext_mods),
+            ]
+        )
+        mod = seq(mod)
+        return mod
+
+    return _pipeline
+
+
 def test_nanochat():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -275,16 +330,24 @@ def test_nanochat():
 
     # Relax
     tvm_device = tvm.cpu() if args.device == "cpu" else tvm.cuda()
-    target = tvm.target.Target(args.target)
+    if args.device == "cpu":
+        target = tvm.target.Target(args.target)
+    elif args.device == "cuda":
+        target = tvm.target.Target.from_device(tvm_device)
+    else:
+        raise ValueError("Unknown device `{args.device}` specified")
     print("Converting ExportedProgram to Relax model...")
     mod = from_exported_program(exported_program, run_ep_decomposition=False)
     mod = tvm.relax.transform.DecomposeOpsForInference()(mod)
 
     print("Compiling Relax module...")
-    pipeline = tvm.relax.get_pipeline(
-        "static_shape_tuning", total_trials=args.num_trials, target=target
-    )
-    exe = tvm.compile(mod, target=target, relax_pipeline=pipeline)
+    # with target:
+    if args.device == "cuda":
+        with target:
+            mod = tvm.tir.transform.DefaultGPUSchedule()(mod)
+    exe = tvm.compile(mod, target, relax_pipeline=relax.get_pipeline("opt_llm"))
+    print("Exporting TVM executable...")
+    exe.export_library("nanochat_tvm_executable.so")
 
     print("Running Relax model...")
     vm = relax.VirtualMachine(exe, tvm_device)
