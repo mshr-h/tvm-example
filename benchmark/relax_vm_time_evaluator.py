@@ -1,18 +1,43 @@
+import argparse
+
 import numpy as np
 import tvm
 
 
 def main():
-    tvm_device = tvm.cpu()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--number", type=int, default=10, help="Number of runs for timing"
+    )
+    parser.add_argument(
+        "--repeat", type=int, default=3, help="Number of repeats for timing"
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="cpu",
+        choices=["cpu", "cuda"],
+        help="Device to run the VM on",
+    )
+    parser.add_argument(
+        "--module",
+        type=str,
+        default="mobilenet_v3_small.so",
+        help="Path to the compiled Relax module",
+    )
+    args = parser.parse_args()
+
+    if args.device == "cpu":
+        tvm_device = tvm.cpu()
+    else:
+        tvm_device = tvm.cuda()
     example_args = (np.random.randn(1, 3, 224, 224).astype("float32"),)
 
-    mod = tvm.runtime.load_module("mobilenet_v3_small.so")
+    mod = tvm.runtime.load_module(args.module)
     vm = tvm.relax.VirtualMachine(mod, tvm_device)
-    number = 10
-    repeat = 3
-    result = vm.time_evaluator("main", tvm_device, number=number, repeat=repeat)(
-        *example_args
-    )
+    result = vm.time_evaluator(
+        "main", tvm_device, number=args.number, repeat=args.repeat
+    )(*example_args)
     print(result)
 
 
