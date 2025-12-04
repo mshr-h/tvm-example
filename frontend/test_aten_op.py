@@ -23,6 +23,7 @@ def verify_model(
     equal_nan=True,
     verbose=False,
     run_ep_decomposition=True,
+    custom_convert_map=None,
 ):
     if target is None:
         target = tvm.target.Target.from_device(dev)
@@ -44,7 +45,9 @@ def verify_model(
 
     # Relax
     mod = from_exported_program(
-        exported_program, run_ep_decomposition=run_ep_decomposition
+        exported_program,
+        run_ep_decomposition=run_ep_decomposition,
+        custom_convert_map=custom_convert_map,
     )
     if verbose:
         print("Relax Module:")
@@ -398,6 +401,42 @@ def test_any():
             return torch.ops.aten.any(x, dim=1)
 
     verify_model(AnyAten().eval(), example_args)
+
+
+def test_rms_norm():
+    example_args = (torch.randn(2, 3, 4, dtype=torch.float32),)
+
+    class RMSNormAten(torch.nn.Module):
+        def forward(self, x):
+            return torch.ops.aten.rms_norm(x, [4], eps=1e-6)
+
+    from tvm.relax.frontend.torch.exported_program_translator import (
+        ExportedProgramImporter,
+    )
+
+    def _rms_norm(node: torch.fx.Node, self: ExportedProgramImporter) -> relax.Var:
+        x = self.env[node.args[0]]
+        torch_dtype = node.args[0].meta["tensor_meta"].dtype
+        normalized_shape = node.args[1]
+        weight = self.env.get(node.args[2], None) if len(node.args) > 2 else None
+        eps = node.args[3] if len(node.args) > 3 else None
+
+        N = len(self.shape_of(x))
+        D = len(normalized_shape) if isinstance(normalized_shape, (tuple, list)) else 1
+        axes = list(range(N - D, N))
+
+        if weight is None:
+            weight = self._convert_torch_tensor_to_relax(
+                torch.ones(list(normalized_shape), dtype=torch_dtype)
+            )
+        eps = torch.finfo(torch_dtype).eps if eps is None else 0.00001
+
+        return self.block_builder.emit(relax.op.nn.rms_norm(x, weight, axes, eps))
+
+    custom_convert_map = {"rms_norm.default": _rms_norm}
+    verify_model(
+        RMSNormAten().eval(), example_args, custom_convert_map=custom_convert_map
+    )
 
 
 if __name__ == "__main__":
