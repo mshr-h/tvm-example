@@ -1,3 +1,4 @@
+import argparse
 import torch
 import torchvision
 import tvm
@@ -5,7 +6,20 @@ from tvm.relax.frontend.torch import from_exported_program
 
 
 def main():
-    tvm_device = tvm.cpu()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="cpu",
+        choices=["cpu", "cuda"],
+        help="Device to run the VM on",
+    )
+    args = parser.parse_args()
+
+    if args.device == "cpu":
+        tvm_device = tvm.cpu()
+    else:
+        tvm_device = tvm.cuda()
     tvm_target = tvm.target.Target.from_device(tvm_device)
 
     model = torchvision.models.mobilenet_v3_small(weights="IMAGENET1K_V1").eval()
@@ -26,7 +40,6 @@ def main():
     )
     with tvm_target:
         mod = pipeline(mod)
-    print(mod.show())
     print(tvm.relax.analysis.estimate_memory_usage(mod))
 
 
