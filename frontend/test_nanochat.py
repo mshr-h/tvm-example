@@ -2,15 +2,13 @@ import argparse
 import json
 import math
 from dataclasses import dataclass
-from typing import List
 
 import torch
-import torch._decomp
 import tvm
+import tvm.testing.utils
 from huggingface_hub import hf_hub_download
 from tvm import dlight, relax
 from tvm.relax import register_pipeline
-from tvm.relax.frontend import nn
 from tvm.relax.frontend.torch import from_exported_program
 
 
@@ -203,29 +201,21 @@ class GPT(torch.nn.Module):
 
 
 @register_pipeline("opt_llm")
-def _pipeline(  # pylint: disable=too-many-arguments
-    ext_mods: List[nn.ExternModule] = None,
-):
-    ext_mods = ext_mods or []
-
+def _pipeline():
     @tvm.transform.module_pass(opt_level=0)
     def _pipeline(
         mod: tvm.ir.IRModule, _ctx: tvm.transform.PassContext
     ) -> tvm.ir.IRModule:
         seq = tvm.transform.Sequential(
             [
-                # Phase 1. Passes on high-level operator graph
-                # We can enable cublas for further optimization
-                relax.transform.FuseTransposeMatmul(),
-                # Phase 2. Lowering to TIR, inherited TVM Relax's official "zero" pipeline
+                relax.backend.DispatchSampling(),
+                relax.backend.DispatchSortScan(),
                 relax.transform.LegalizeOps(),
                 relax.transform.AnnotateTIROpPattern(),
                 relax.transform.FoldConstant(),
                 relax.transform.FuseOps(),
                 relax.transform.FuseTIR(),
-                # Phase 3. Passes on TIR
                 relax.transform.DeadCodeElimination(),
-                # Phase 4. Low-level Optimizations
                 dlight.ApplyDefaultSchedule(
                     dlight.gpu.Matmul(),
                     dlight.gpu.GEMV(),
@@ -233,7 +223,6 @@ def _pipeline(  # pylint: disable=too-many-arguments
                     dlight.gpu.GeneralReduction(),
                     dlight.gpu.Fallback(),
                 ),
-                # Phase 5. Lowering to VM bytecode
                 relax.transform.RewriteDataflowReshape(),
                 relax.transform.ToNonDataflow(),
                 relax.transform.RemovePurityChecking(),
@@ -243,9 +232,10 @@ def _pipeline(  # pylint: disable=too-many-arguments
                 relax.transform.LowerAllocTensor(),
                 relax.transform.KillAfterLastUse(),
                 relax.transform.LowerRuntimeBuiltin(),
+                relax.transform.ComputePrimValue(),
                 relax.transform.VMShapeLower(),
                 relax.transform.AttachGlobalSymbol(),
-                relax.transform.AttachExternModules(ext_mods),
+                tvm.tir.transform.DefaultGPUSchedule(),
             ]
         )
         mod = seq(mod)
@@ -256,20 +246,24 @@ def _pipeline(  # pylint: disable=too-many-arguments
 
 def test_nanochat():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--target",
-        type=str,
-        default="llvm -keys=cpu -mcpu=znver4 -mtriple=x86_64-pc-linux-gnu -num-cores=24",
-    )
-    parser.add_argument("--num-trials", type=int, default=8000)
-    parser.add_argument("--device", type=str, choices=["cpu", "cuda"], default="cpu")
+    parser.add_argument("--device", type=str, choices=["cuda"], default="cuda")
     args = parser.parse_args()
 
     repo_id = "sdobson/nanochat"
     model_file = "model_000650.pt"
     meta_file = "meta_000650.json"
 
-    device = "cpu"  # torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if args.device == "cuda":
+        if not torch.cuda.is_available():
+            raise RuntimeError(
+                "CUDA device requested but torch.cuda.is_available() is False"
+            )
+        torch.backends.cuda.enable_flash_sdp(False)
+        torch.backends.cuda.enable_mem_efficient_sdp(False)
+        torch.backends.cuda.enable_math_sdp(True)
+        torch_device = torch.device("cuda")
+    else:
+        torch_device = torch.device("cpu")
 
     print("Downloading model and metadata...")
     local_pt_path = hf_hub_download(repo_id=repo_id, filename=model_file)
@@ -284,13 +278,13 @@ def test_nanochat():
         model = GPT(model_config)
 
     print("Loading model weights...")
-    model_data = torch.load(local_pt_path, map_location=device, weights_only=True)
+    model_data = torch.load(local_pt_path, map_location="cpu", weights_only=True)
     model_data = {k.lstrip("_orig_mod."): v for k, v in model_data.items()}
     model_data = {
         k: v.float() if v.dtype == torch.bfloat16 else v for k, v in model_data.items()
     }
 
-    model.to_empty(device=device)
+    model.to_empty(device="cpu")
     model.init_weights()
     model.load_state_dict(model_data, strict=True, assign=True)
     model.eval()
@@ -303,73 +297,93 @@ def test_nanochat():
         def forward(self, idx: torch.Tensor) -> torch.Tensor:
             return self.gpt(idx)
 
-    export_model = GPTForExport(model).to(device)
+    export_model = GPTForExport(model).to("cpu")
     export_model.eval()
 
     print("Exporting model to ExportedProgram...")
     B = 1
     T = model_config.sequence_len
-    example_args = (torch.zeros((B, T), dtype=torch.long, device=device),)
+    example_args = (torch.zeros((B, T), dtype=torch.long, device="cpu"),)
 
     exported_program = torch.export.export(
         export_model,
         example_args,
     )
 
-    # Those ops are not yet supported in TVM, so we decompose them here
-    decomp_table = torch._decomp.get_decompositions(
-        (
-            torch.ops.aten.rms_norm.default,
-            torch.ops.aten._scaled_dot_product_flash_attention_for_cpu.default,
-            torch.ops.aten.t.default,
-            torch.ops.aten._safe_softmax.default,
-            torch.ops.aten.all.dim,
-        )
+    # rms_norm is not yet supported in TVM, so we define custom converter
+    from tvm.relax.frontend.torch.exported_program_translator import (
+        ExportedProgramImporter,
     )
-    exported_program = exported_program.run_decompositions(decomp_table=decomp_table)
+
+    def _rms_norm(node: torch.fx.Node, self: ExportedProgramImporter) -> relax.Var:
+        x = self.env[node.args[0]]
+        torch_dtype = node.args[0].meta["tensor_meta"].dtype
+        normalized_shape = node.args[1]
+        weight = self.env.get(node.args[2], None) if len(node.args) > 2 else None
+        eps = node.args[3] if len(node.args) > 3 else None
+
+        N = len(self.shape_of(x))
+        D = len(normalized_shape) if isinstance(normalized_shape, (tuple, list)) else 1
+        axes = list(range(N - D, N))
+
+        if weight is None:
+            weight = self._convert_torch_tensor_to_relax(
+                torch.ones(list(normalized_shape), dtype=torch_dtype)
+            )
+        eps = torch.finfo(torch_dtype).eps if eps is None else 0.00001
+
+        return self.block_builder.emit(relax.op.nn.rms_norm(x, weight, axes, eps))
 
     # Relax
     tvm_device = tvm.cpu() if args.device == "cpu" else tvm.cuda()
-    if args.device == "cpu":
-        target = tvm.target.Target(args.target)
-    elif args.device == "cuda":
-        target = tvm.target.Target.from_device(tvm_device)
-    else:
-        raise ValueError("Unknown device `{args.device}` specified")
+    target = tvm.target.Target.from_device(tvm_device)
     print("Converting ExportedProgram to Relax model...")
-    mod = from_exported_program(exported_program, run_ep_decomposition=False)
+    mod = from_exported_program(
+        exported_program,
+        custom_convert_map={"rms_norm.default": _rms_norm},
+        run_ep_decomposition=False,
+    )
     mod = tvm.relax.transform.DecomposeOpsForInference()(mod)
 
     print("Compiling Relax module...")
-    # with target:
-    if args.device == "cuda":
-        with target:
-            mod = tvm.tir.transform.DefaultGPUSchedule()(mod)
-    exe = tvm.compile(mod, target, relax_pipeline=relax.get_pipeline("opt_llm"))
+    exe = tvm.compile(mod, target, relax_pipeline="opt_llm")
+
     print("Exporting TVM executable...")
     exe.export_library("nanochat_tvm_executable.so")
 
-    print("Running Relax model...")
+    print(f"Running Relax model on {args.device}...")
     vm = relax.VirtualMachine(exe, tvm_device)
-    tvm_args = [tvm.runtime.from_dlpack(x.contiguous()) for x in example_args]
+    tvm_args = [
+        tvm.runtime.from_dlpack(x.contiguous().to(torch_device)) for x in example_args
+    ]
     tvm_outputs = vm["main"](*tvm_args)
 
     # PyTorch
-    print("Running PyTorch model...")
+    print("Running PyTorch model on cpu...")
     expected: torch.Tensor = exported_program.module()(*example_args)
 
     # check if the outputs match
+    rtol = 1e-4
+    atol = 1e-4
     if isinstance(expected, dict):
         for i, key in enumerate(expected.keys()):
             actual = torch.from_numpy(tvm_outputs[i].numpy())
-            torch.testing.assert_close(
-                actual, expected[key], rtol=1e-4, atol=1e-4, equal_nan=True
+            tvm.testing.utils.assert_allclose(
+                actual.detach().numpy(),
+                expected[key].detach().numpy(),
+                rtol=rtol,
+                atol=atol,
             )
     else:
         actuals = torch.from_numpy(tvm_outputs[0].numpy())
-        torch.testing.assert_close(
-            actuals, expected, rtol=1e-4, atol=1e-4, equal_nan=True
+        tvm.testing.utils.assert_allclose(
+            actuals.detach().numpy(), expected.detach().numpy(), rtol=rtol, atol=atol
         )
+    print("Outputs match between TVM Relax and PyTorch!")
+
+    print(f"Benchmarking Relax model on {args.device}...")
+    report = vm.time_evaluator("main", tvm_device, number=5, repeat=3)(*tvm_args)
+    print(report)
 
 
 if __name__ == "__main__":
