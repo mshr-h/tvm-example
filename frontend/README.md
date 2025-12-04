@@ -215,6 +215,12 @@ E   tvm.error.InternalError: IndexPut requires the number of index tensors (3) t
 <unknown>:0: InternalError
 ```
 
+### lfm2
+
+```bash
+uv run pytest test_lfm2.py -v -s
+```
+
 ### Ideas
 
 - TorchInductor Performance DashBoard (aot_inductor)
