@@ -412,7 +412,8 @@ def main():
     )
     idx_nd = tvm.runtime.tensor(idx_np, device=dev)
 
-    logits = vm["forward"](idx_nd, param_ndarrays)
+    # logits = vm["forward"](idx_nd, param_ndarrays)
+    print(vm.time_evaluator("forward", dev)(idx_nd, param_ndarrays))
 
 
 if __name__ == "__main__":
