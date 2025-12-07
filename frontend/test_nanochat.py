@@ -247,6 +247,7 @@ def _pipeline():
 def test_nanochat():
     parser = argparse.ArgumentParser()
     parser.add_argument("--device", type=str, choices=["cpu", "cuda"], default="cuda")
+    parser.add_argument("--benchmark", action="store_true")
     args = parser.parse_args()
 
     repo_id = "sdobson/nanochat"
@@ -338,20 +339,6 @@ def test_nanochat():
     print("Running PyTorch model on cpu...")
     expected: torch.Tensor = exported_program.module()(*example_args)
 
-    print(f"Benchmarking PyTorch model on {args.device}...")
-    import torch.utils.benchmark as benchmark
-
-    export_model.to(torch_device)
-    example_args = tuple(x.to(torch_device) for x in example_args)
-
-    t0 = benchmark.Timer(
-        stmt="export_model(*example_args)",
-        globals={"export_model": export_model, "example_args": example_args},
-        num_threads=torch.get_num_threads(),
-    )
-
-    print(t0.timeit(5))
-
     # Relax
     tvm_device = tvm.cpu() if args.device == "cpu" else tvm.cuda()
     target = tvm.target.Target.from_device(tvm_device)
@@ -398,6 +385,23 @@ def test_nanochat():
             actuals.detach().numpy(), expected.detach().numpy(), rtol=rtol, atol=atol
         )
     print("Outputs match between TVM Relax and PyTorch!")
+
+    if not args.benchmark:
+        return
+
+    print(f"Benchmarking PyTorch model on {args.device}...")
+    import torch.utils.benchmark as benchmark
+
+    export_model.to(torch_device)
+    example_args = tuple(x.to(torch_device) for x in example_args)
+
+    t0 = benchmark.Timer(
+        stmt="export_model(*example_args)",
+        globals={"export_model": export_model, "example_args": example_args},
+        num_threads=torch.get_num_threads(),
+    )
+
+    print(t0.timeit(5))
 
     print(f"Benchmarking Relax model on {args.device}...")
     report = vm.time_evaluator("main", tvm_device, number=5, repeat=3)(*tvm_args)
