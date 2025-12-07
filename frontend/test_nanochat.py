@@ -246,7 +246,7 @@ def _pipeline():
 
 def test_nanochat():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--device", type=str, choices=["cuda"], default="cuda")
+    parser.add_argument("--device", type=str, choices=["cpu", "cuda"], default="cuda")
     args = parser.parse_args()
 
     repo_id = "sdobson/nanochat"
