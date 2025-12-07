@@ -1,3 +1,4 @@
+import argparse
 import dataclasses
 import json
 import math
@@ -349,6 +350,12 @@ def _pipeline():
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--device", type=str, default="cuda", choices=["cpu", "cuda"], help="Device to run the model on (cpu or cuda)"
+    )
+    args = parser.parse_args()
+
     repo_id = "sdobson/nanochat"
     model_file = "model_000650.pt"
     meta_file = "meta_000650.json"
@@ -359,7 +366,8 @@ def main():
     tvm_config = GPTConfig(**model_config)
     tvm_model = GPT(tvm_config)
 
-    dev = tvm.device("cpu", 0)  # "cpu" / "cuda"
+    dev = tvm.device(args.device, 0)  # "cpu" / "cuda"
+    print("Using device:", dev)
     # tvm_model.to("float16")  # bfloat16 -> float16 などに揃える場合
 
     mod, named_params = tvm_model.export_tvm(spec=tvm_model.get_default_spec())
@@ -385,6 +393,7 @@ def main():
         param_ndarrays.append(tvm.runtime.from_dlpack(torch_tensor))
 
     target = tvm.target.Target.from_device(dev)
+    print("Target:", target)
     pipeline = relax.get_pipeline("opt_llm")
 
     print("Compiling with pipeline:", pipeline)
