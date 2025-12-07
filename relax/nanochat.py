@@ -1,23 +1,25 @@
 import dataclasses
+import json
 import math
-import numpy as np
 
+import numpy as np
 import torch
 import tvm
 from huggingface_hub import hf_hub_download
-from tvm import relax
+from tvm import dlight, relax
+from tvm.relax import register_pipeline
 from tvm.relax.frontend import nn
 from tvm.relax.frontend.nn import Tensor, op
 
 
 @dataclasses.dataclass
 class GPTConfig:
-    sequence_len: int = 1024
-    vocab_size: int = 50304
-    n_layer: int = 12
-    n_head: int = 6
-    n_kv_head: int = 6
-    n_embd: int = 768
+    sequence_len: int = 2048
+    vocab_size: int = 65536
+    n_layer: int = 20
+    n_head: int = 10
+    n_kv_head: int = 10
+    n_embd: int = 1280
 
 
 def rms_norm(x: Tensor, eps: float = 1e-5) -> Tensor:
@@ -26,14 +28,16 @@ def rms_norm(x: Tensor, eps: float = 1e-5) -> Tensor:
     # y = x / rms
     x2 = op.multiply(x, x)
     # 最後の次元で平均
-    mean = op.mean(x2, axis=-1, keepdims=True)
-    rms = op.sqrt(op.add(mean, op.full_like(mean, eps)))
+    denom = nn.Tensor.from_scalar(x.shape[-1], dtype=x.dtype)
+    mean = op.divide(op.sum(x2, axis=-1, keepdims=True), denom)
+    eps_tensor = nn.Tensor.from_scalar(eps, dtype=mean.dtype)
+    rms = op.sqrt(op.add(mean, eps_tensor))
     return op.divide(x, rms)
 
 
 def apply_rotary_emb(x: Tensor, cos: Tensor, sin: Tensor) -> Tensor:
     # x: (B, H, T, D)
-    # cos/sin: (1, T, 1, D/2) を想定
+    # cos/sin: (1, 1, T, D/2) を想定
     b, h, t, d = x.shape
 
     x1, x2 = op.split(x, 2, axis=-1)  # (..., D/2), (..., D/2)
@@ -41,7 +45,7 @@ def apply_rotary_emb(x: Tensor, cos: Tensor, sin: Tensor) -> Tensor:
     # y2 = -x1 * sin + x2 * cos
     y1 = op.add(op.multiply(x1, cos), op.multiply(x2, sin))
     y2 = op.add(op.multiply(op.negative(x1), sin), op.multiply(x2, cos))
-    return op.concat((y1, y2), axis=-1)
+    return op.concat((y1, y2), dim=-1)
 
 
 def repeat_kv(x: Tensor, n_rep: int) -> Tensor:
@@ -85,7 +89,8 @@ class CausalSelfAttention(nn.Module):
         # scores: (B*H, T, T)
         scores = op.matmul(q2, op.permute_dims(k2, [0, 2, 1]))
         scale = 1.0 / math.sqrt(d)
-        scores = op.multiply(scores, op.full_like(scores, scale))
+        scale_tensor = nn.Tensor.from_scalar(scale, dtype=scores.dtype)
+        scores = op.multiply(scores, scale_tensor)
 
         # causal mask: j > i を -1e9 に
         # mask_base: (T, T) 上三角（対角より上）が 1
@@ -185,9 +190,18 @@ class Block(nn.Module):
         return x
 
 
+def _tvm_dtype_to_torch(dtype: str) -> torch.dtype:
+    """Map TVM dtype strings to torch dtypes used for parameters."""
+    if dtype == "float32":
+        return torch.float32
+    if dtype == "float16":
+        return torch.float16
+    if dtype == "bfloat16":
+        return torch.bfloat16
+    raise ValueError(f"Unsupported dtype conversion: {dtype}")
 
 
-class NanoChatGPT(nn.Module):
+class GPT(nn.Module):
     def __init__(self, config: GPTConfig):
         super().__init__()
         self.config = config
@@ -222,9 +236,9 @@ class NanoChatGPT(nn.Module):
         freqs = np.outer(t, inv_freq)
         cos = np.cos(freqs)
         sin = np.sin(freqs)
-        # (1, seq_len, 1, head_dim/2)
-        cos = cos[None, :, None, :].astype("float32")
-        sin = sin[None, :, None, :].astype("float32")
+        # (1, 1, seq_len, head_dim/2)
+        cos = cos[None, None, :, :].astype("float32")
+        sin = sin[None, None, :, :].astype("float32")
         cos_tensor = Tensor.from_const(cos)
         sin_tensor = Tensor.from_const(sin)
         return cos_tensor, sin_tensor
@@ -239,12 +253,15 @@ class NanoChatGPT(nn.Module):
 
         # RoPE の長さチェック
         # ここでは単純に先頭 T ステップ分のみを使う
-        cos = self.cos[:, :t, :, :]
-        sin = self.sin[:, :t, :, :]
+        positions = op.arange(0, t, dtype="int32")
+        cos = op.take(self.cos, positions, axis=2)
+        sin = op.take(self.sin, positions, axis=2)
 
         # Embedding
         x = self.transformer["wte"](idx)  # (B, T, C)
         x = rms_norm(x)
+        cos = op.astype(cos, x.dtype)
+        sin = op.astype(sin, x.dtype)
 
         # Blocks
         for block in self.transformer["h"]:
@@ -276,7 +293,7 @@ class NanoChatGPT(nn.Module):
         return nn.spec.ModuleSpec.from_raw(
             {
                 "forward": {
-                    "idx": nn.spec.Tensor(["batch", "seq_len"], "int32"),
+                    "idx": nn.spec.Tensor(["batch", self.config.sequence_len], "int32"),
                     "$": {
                         "param_mode": "packed",
                         "effect_mode": "none",
@@ -287,30 +304,106 @@ class NanoChatGPT(nn.Module):
         )
 
 
-def main():
-    tvm_config = GPTConfig(
-        sequence_len=1024,
-        vocab_size=50304,
-        n_layer=12,
-        n_head=6,
-        n_kv_head=6,
-        n_embd=768,
-    )
-    tvm_model = NanoChatGPT(tvm_config)
+@register_pipeline("opt_llm")
+def _pipeline():
+    @tvm.transform.module_pass(opt_level=0)
+    def _pipeline(
+        mod: tvm.ir.IRModule, _ctx: tvm.transform.PassContext
+    ) -> tvm.ir.IRModule:
+        seq = tvm.transform.Sequential(
+            [
+                relax.backend.DispatchSampling(),
+                relax.backend.DispatchSortScan(),
+                relax.transform.LegalizeOps(),
+                relax.transform.AnnotateTIROpPattern(),
+                relax.transform.FoldConstant(),
+                relax.transform.FuseOps(),
+                relax.transform.FuseTIR(),
+                relax.transform.DeadCodeElimination(),
+                dlight.ApplyDefaultSchedule(
+                    dlight.gpu.Matmul(),
+                    dlight.gpu.GEMV(),
+                    dlight.gpu.Reduction(),
+                    dlight.gpu.GeneralReduction(),
+                    dlight.gpu.Fallback(),
+                ),
+                relax.transform.RewriteDataflowReshape(),
+                relax.transform.ToNonDataflow(),
+                relax.transform.RemovePurityChecking(),
+                relax.transform.CallTIRRewrite(),
+                relax.transform.StaticPlanBlockMemory(),
+                relax.transform.RewriteCUDAGraph(),
+                relax.transform.LowerAllocTensor(),
+                relax.transform.KillAfterLastUse(),
+                relax.transform.LowerRuntimeBuiltin(),
+                relax.transform.ComputePrimValue(),
+                relax.transform.VMShapeLower(),
+                relax.transform.AttachGlobalSymbol(),
+                tvm.tir.transform.DefaultGPUSchedule(),
+            ]
+        )
+        mod = seq(mod)
+        return mod
 
-    dev = tvm.device("cuda", 0)  # or "cpu"
-    tvm_model.to("float16")  # bfloat16 -> float16 などに揃える場合
+    return _pipeline
+
+
+def main():
+    repo_id = "sdobson/nanochat"
+    model_file = "model_000650.pt"
+    meta_file = "meta_000650.json"
+
+    local_meta_path = hf_hub_download(repo_id=repo_id, filename=meta_file)
+    with open(local_meta_path) as f:
+        model_config = json.load(f)["model_config"]
+    tvm_config = GPTConfig(**model_config)
+    tvm_model = GPT(tvm_config)
+
+    dev = tvm.device("cpu", 0)  # "cpu" / "cuda"
+    # tvm_model.to("float16")  # bfloat16 -> float16 などに揃える場合
 
     mod, named_params = tvm_model.export_tvm(spec=tvm_model.get_default_spec())
     named_params = dict(named_params)  # name -> Parameter
 
-    repo_id = "sdobson/nanochat"
-    model_file = "model_000650.pt"
     local_pt_path = hf_hub_download(repo_id=repo_id, filename=model_file)
-    model_data = torch.load(local_pt_path, map_location="cpu", weights_only=True)
+    torch_state = torch.load(local_pt_path, map_location="cpu", weights_only=True)
 
-    print("PyTorch keys example:", list(model_data.keys())[:5])
+    print("Using config:", tvm_config)
+    print("HF checkpoint wte shape:", torch_state["transformer.wte.weight"].shape)
+    print("TVM named_params wte shape:", named_params["transformer.wte.weight"].shape)
+    print("PyTorch keys example:         ", list(torch_state.keys())[:5])
     print("TVM named_params keys example:", list(named_params.keys())[:5])
+
+    # 2) PyTorch Tensor -> numpy -> TVM NDArray
+    param_ndarrays = []
+    for name, param in named_params.items():
+        # Align dtypes with the exported TVM module (HF checkpoint stores some weights in bf16).
+        torch_tensor = torch_state[name].detach()
+        desired_dtype = _tvm_dtype_to_torch(param.dtype)
+        if torch_tensor.dtype != desired_dtype:
+            torch_tensor = torch_tensor.to(desired_dtype)
+        param_ndarrays.append(tvm.runtime.from_dlpack(torch_tensor))
+
+    target = tvm.target.Target.from_device(dev)
+    pipeline = relax.get_pipeline("opt_llm")
+
+    print("Compiling with pipeline:", pipeline)
+    with target:
+        ex = tvm.compile(
+            mod,
+            target=target,
+            relax_pipeline=pipeline,
+        )
+    vm = relax.VirtualMachine(ex, dev)
+
+    # idx: (B, T) の int32 TVM tensor を用意
+    print("Running inference...")
+    idx_np = np.random.randint(
+        0, tvm_config.vocab_size, size=(1, tvm_config.sequence_len), dtype="int32"
+    )
+    idx_nd = tvm.runtime.tensor(idx_np, device=dev)
+
+    logits = vm["forward"](idx_nd, param_ndarrays)
 
 
 if __name__ == "__main__":
