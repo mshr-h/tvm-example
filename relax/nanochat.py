@@ -390,7 +390,7 @@ def main():
         desired_dtype = _tvm_dtype_to_torch(param.dtype)
         if torch_tensor.dtype != desired_dtype:
             torch_tensor = torch_tensor.to(desired_dtype)
-        param_ndarrays.append(tvm.runtime.from_dlpack(torch_tensor))
+        param_ndarrays.append(tvm.runtime.tensor(torch_tensor, device=dev))
 
     target = tvm.target.Target.from_device(dev)
     print("Target:", target)
