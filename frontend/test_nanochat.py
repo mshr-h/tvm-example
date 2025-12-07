@@ -334,6 +334,24 @@ def test_nanochat():
 
         return self.block_builder.emit(relax.op.nn.rms_norm(x, weight, axes, eps))
 
+    # PyTorch
+    print("Running PyTorch model on cpu...")
+    expected: torch.Tensor = exported_program.module()(*example_args)
+
+    print(f"Benchmarking PyTorch model on {args.device}...")
+    import torch.utils.benchmark as benchmark
+
+    export_model.to(torch_device)
+    example_args = tuple(x.to(torch_device) for x in example_args)
+
+    t0 = benchmark.Timer(
+        stmt="export_model(*example_args)",
+        globals={"export_model": export_model, "example_args": example_args},
+        num_threads=torch.get_num_threads(),
+    )
+
+    print(t0.timeit(5))
+
     # Relax
     tvm_device = tvm.cpu() if args.device == "cpu" else tvm.cuda()
     target = tvm.target.Target.from_device(tvm_device)
@@ -351,16 +369,16 @@ def test_nanochat():
     print("Exporting TVM executable...")
     exe.export_library("nanochat_tvm_executable.so")
 
+    if args.device == "cpu":
+        print("Skipping TVM execution on CPU because it takes forever.")
+        return
+
     print(f"Running Relax model on {args.device}...")
     vm = relax.VirtualMachine(exe, tvm_device)
     tvm_args = [
         tvm.runtime.from_dlpack(x.contiguous().to(torch_device)) for x in example_args
     ]
     tvm_outputs = vm["main"](*tvm_args)
-
-    # PyTorch
-    print("Running PyTorch model on cpu...")
-    expected: torch.Tensor = exported_program.module()(*example_args)
 
     # check if the outputs match
     rtol = 1e-4
