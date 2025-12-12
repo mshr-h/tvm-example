@@ -6,7 +6,7 @@ set -e
 
 source_dir="tvm"
 branch="main"
-build_options="-G Ninja; -DUSE_MLIR=ON; -DUSE_CPP_RPC=ON;"
+build_options="-G Ninja; -DCMAKE_BUILD_TYPE=RelWithDebInfo; -DUSE_MLIR=ON; -DUSE_CPP_RPC=ON;"
 use_llvm="ON"
 clean_build_dir=0
 if command -v uv &> /dev/null; then
