@@ -1,12 +1,13 @@
-import torch
-from torch.export import export, Dim
+from typing import Optional, Union
+
 import pytest
-from typing import Optional
+import torch
+import tvm.testing
+from torch.export import Dim, export
+from tvm.relax.frontend.torch import from_exported_program
 
 import tvm
 from tvm import relax
-import tvm.testing
-from tvm.relax.frontend.torch import from_exported_program
 
 
 def verify_model(
@@ -14,7 +15,7 @@ def verify_model(
     example_args,
     example_kwargs={},
     dynamic_shapes=None,
-    target: Optional[str] = None,
+    target: Optional[Union[str, tvm.target.Target]] = None,
     dev=tvm.cpu(),
     rtol=1e-4,
     atol=1e-4,
@@ -44,20 +45,16 @@ def verify_model(
     if isinstance(expected, dict):
         for i, key in enumerate(expected.keys()):
             actual = torch.from_numpy(tvm_outputs[i].numpy())
-            torch.testing.assert_close(
-                actual, expected[key], rtol=rtol, atol=atol, equal_nan=equal_nan
-            )
+            torch.testing.assert_close(actual, expected[key], rtol=rtol, atol=atol, equal_nan=equal_nan)
     else:
         actuals = torch.from_numpy(tvm_outputs[0].numpy())
-        torch.testing.assert_close(
-            actuals, expected, rtol=rtol, atol=atol, equal_nan=equal_nan
-        )
+        torch.testing.assert_close(actuals, expected, rtol=rtol, atol=atol, equal_nan=equal_nan)
 
 
 def verify_torchvision_model(model_name: str, is_dynamic: bool = False):
-    from tvm.contrib.download import download_testdata
-    from torchvision.models import get_model, get_model_weights
     from torchvision.io import read_image
+    from torchvision.models import get_model, get_model_weights
+    from tvm.contrib.download import download_testdata
 
     # prepare sample image
     img_url = "https://github.com/dmlc/mxnet.js/blob/main/data/cat.png?raw=true"
