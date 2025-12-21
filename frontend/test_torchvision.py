@@ -23,6 +23,8 @@ def verify_model(
 ):
     if target is None:
         target = tvm.target.Target.from_device(dev)
+    elif isinstance(target, str):
+        target = tvm.target.Target(target)
 
     # PyTorch
     exported_program = export(
@@ -35,7 +37,7 @@ def verify_model(
 
     # Relax
     mod = from_exported_program(exported_program)
-    mod = tvm.relax.transform.DecomposeOpsForInference()(mod)
+    mod = relax.transform.DecomposeOpsForInference()(mod)
     exe = tvm.compile(mod, target=target)
     vm = relax.VirtualMachine(exe, dev)
     tvm_args = [tvm.runtime.from_dlpack(x.contiguous()) for x in example_args]
