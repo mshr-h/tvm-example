@@ -19,17 +19,23 @@ while test $# -gt 0; do
   case "$1" in
     -h|--help)
       echo "options:"
-      echo "-h, --help  show brief help"
-      echo "--clean     cleanup build directory"
-      echo "--cuda      enable CUDA support"
-      echo "--msc       enable Multi-System Compiler support"
-      echo "--papi      enable PAPI support"
-      echo "--llvm      option for USE_LLVM"
+      echo "-h, --help       show brief help"
+      echo "--source-dir     source directory (default: tvm)"
+      echo "--clean          cleanup build directory"
+      echo "--cuda           enable CUDA support"
+      echo "--msc            enable Multi-System Compiler support"
+      echo "--papi           enable PAPI support"
+      echo "--llvm           option for USE_LLVM"
       exit 0
       ;;
     --clean)
       shift
       clean_build_dir=1
+      ;;
+    --source-dir)
+      shift
+      source_dir=$1
+      shift
       ;;
     --cuda)
       shift
@@ -46,6 +52,7 @@ while test $# -gt 0; do
     --llvm)
       shift
       use_llvm=$1
+      shift
       ;;
     *)
       break
