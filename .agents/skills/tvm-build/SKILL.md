@@ -2,10 +2,10 @@
 name: tvm-build
 description: Rebuild Apache TVM from source by invoking the provided build script.
 compatibility:
-	os:
-		- linux
-	shell:
-		- bash
+  os:
+    - linux
+  shell:
+    - bash
 ---
 
 This skill rebuilds Apache TVM from source by calling the existing build script. It does not reimplement build steps.
