@@ -26,6 +26,8 @@ while test $# -gt 0; do
       echo "--msc            enable Multi-System Compiler support"
       echo "--papi           enable PAPI support"
       echo "--llvm           option for USE_LLVM"
+      echo "--opencl         enable for USE_OPENCL"
+      echo "--clml           enable for USE_CLML"
       exit 0
       ;;
     --clean)
@@ -53,6 +55,14 @@ while test $# -gt 0; do
       shift
       use_llvm=$1
       shift
+      ;;
+    --opencl)
+      shift
+      build_options+="-DUSE_OPENCL=ON;"
+      ;;
+    --clml)
+      shift
+      build_options+="-DUSE_CLML=ON;"
       ;;
     *)
       break
