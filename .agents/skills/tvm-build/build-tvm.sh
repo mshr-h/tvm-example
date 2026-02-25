@@ -23,8 +23,6 @@ while test $# -gt 0; do
       echo "--source-dir     source directory (default: tvm)"
       echo "--clean          cleanup build directory"
       echo "--cuda           enable CUDA support"
-      echo "--msc            enable Multi-System Compiler support"
-      echo "--papi           enable PAPI support"
       echo "--llvm           option for USE_LLVM"
       echo "--opencl         enable for USE_OPENCL"
       echo "--clml           enable for USE_CLML"
@@ -42,14 +40,6 @@ while test $# -gt 0; do
     --cuda)
       shift
       build_options+="-DUSE_CUDA=ON; -DUSE_TENSORRT_CODEGEN=ON;"
-      ;;
-    --msc)
-      shift
-      build_options+="-DUSE_MSC=ON;"
-      ;;
-    --papi)
-      shift
-      build_options+="-DUSE_PAPI=ON;"
       ;;
     --llvm)
       shift
