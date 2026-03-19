@@ -44,7 +44,7 @@ def _pipeline():
                 relax.transform.ComputePrimValue(),
                 relax.transform.VMShapeLower(),
                 relax.transform.AttachGlobalSymbol(),
-                tvm.tir.transform.DefaultGPUSchedule(),
+                tvm.s_tir.transform.DefaultGPUSchedule(),
             ]
         )
         mod = seq(mod)
