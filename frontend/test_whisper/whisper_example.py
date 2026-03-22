@@ -38,14 +38,19 @@ NO_TIMESTAMPS = True
 # ----------------------------------------------------------------------
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Whisper preprocess/encoder/decoder in tvm.relax.frontend.nn "
-        "with Hugging Face weight copy and numerical comparison."
+        description=(
+            "Whisper preprocess/encoder/cached decoder-step in tvm.relax.frontend.nn "
+            "with Hugging Face weight copy and numerical comparison."
+        )
     )
     parser.add_argument(
         "--flac",
         type=Path,
         required=True,
-        help="Path to the input FLAC file. The script reads it, converts to mono float32, and resamples to 16 kHz.",
+        help=(
+            "Path to the input FLAC file. The script reads it, converts it to mono "
+            "float32, and resamples it to 16 kHz."
+        ),
     )
     parser.add_argument("--model-id", default="openai/whisper-tiny")
     parser.add_argument("--max-new-tokens", type=int, default=128)
@@ -163,10 +168,6 @@ def strip_prefix_and_eos(seq: Sequence[int], prompt_ids: List[int], eos_token_id
 
 
 def apply_whisper_suppression(logits_np, generation_config, generated_token_index: int):
-    """
-    A small host-side approximation of Whisper's default suppression behavior so
-    greedy TVM decoding matches HF generate() more closely.
-    """
     logits_np = logits_np.copy()
 
     suppress_tokens = getattr(generation_config, "suppress_tokens", None)
@@ -247,7 +248,7 @@ def make_stft_conv_kernels(n_fft: int = N_FFT, n_freq: int = N_FREQ):
     real = np.cos(phase) * window
     imag = -np.sin(phase) * window
 
-    real = real.astype(np.float32)[:, None, :]  # [F, 1, N_FFT]
+    real = real.astype(np.float32)[:, None, :]
     imag = imag.astype(np.float32)[:, None, :]
     return real, imag
 
@@ -261,7 +262,8 @@ class WhisperPreprocessTVM(nn.Module):
             mel_filters = mel_filters.T
         if mel_filters.shape != (N_FREQ, N_MELS):
             raise ValueError(
-                f"Expected mel_filters shape {(N_FREQ, N_MELS)} or {(N_MELS, N_FREQ)}, got {mel_filters.shape}"
+                f"Expected mel_filters shape {(N_FREQ, N_MELS)} or {(N_MELS, N_FREQ)}, "
+                f"got {mel_filters.shape}"
             )
 
         real_kernel, imag_kernel = make_stft_conv_kernels()
@@ -285,22 +287,20 @@ class WhisperPreprocessTVM(nn.Module):
         self.four = Tensor.from_scalar(4.0, "float32")
 
     def forward(self, waveform: Tensor, valid_samples: Tensor):
-        # waveform: [1, 480000] float32
-        # valid_samples: [1] int32
-        x = op.take(waveform, self.reflect_indices, axis=1)  # [1, 480400]
-        x = op.unsqueeze(x, dim=1)  # [1, 1, 480400]
+        x = op.take(waveform, self.reflect_indices, axis=1)
+        x = op.reshape(x, [1, 1, N_SAMPLES + 2 * REFLECT_PAD])
 
         real = op.conv1d(x, self.real_kernel, stride=HOP_LENGTH, padding=0)
         imag = op.conv1d(x, self.imag_kernel, stride=HOP_LENGTH, padding=0)
-        power = op.add(op.square(real), op.square(imag))  # [1, 201, 3001]
-        power = op.take(power, self.keep_frame_indices, axis=2)  # [1, 201, 3000]
+        power = op.add(op.square(real), op.square(imag))
+        power = op.take(power, self.keep_frame_indices, axis=2)
 
-        power_t = op.permute_dims(power, axes=[0, 2, 1])  # [1, 3000, 201]
-        mel = op.matmul(power_t, self.mel_filters)  # [1, 3000, 80]
-        mel = op.permute_dims(mel, axes=[0, 2, 1])  # [1, 80, 3000]
+        power_t = op.permute_dims(power, axes=[0, 2, 1])
+        mel = op.matmul(power_t, self.mel_filters)
+        mel = op.permute_dims(mel, axes=[0, 2, 1])
 
         log_spec = op.log(op.maximum(mel, self.log_eps))
-        log_spec = op.multiply(log_spec, self.inv_ln10)  # ln -> log10
+        log_spec = op.multiply(log_spec, self.inv_ln10)
 
         max_val = op.max(log_spec, axis=[1, 2], keepdims=True)
         log_spec = op.maximum(log_spec, op.subtract(max_val, self.eight))
@@ -321,10 +321,7 @@ class WhisperPreprocessTVM(nn.Module):
                 "forward": {
                     "waveform": nn.spec.Tensor([1, N_SAMPLES], "float32"),
                     "valid_samples": nn.spec.Tensor([1], "int32"),
-                    "$": {
-                        "param_mode": "none",
-                        "effect_mode": "none",
-                    },
+                    "$": {"param_mode": "none", "effect_mode": "none"},
                 }
             },
             self,
@@ -332,10 +329,10 @@ class WhisperPreprocessTVM(nn.Module):
 
 
 # ----------------------------------------------------------------------
-# TVM-native Whisper encoder / decoder
+# TVM-native Whisper encoder
 # ----------------------------------------------------------------------
 class WhisperAttentionTVM(nn.Module):
-    def __init__(self, embed_dim: int, num_heads: int, is_cross_attention: bool):
+    def __init__(self, embed_dim: int, num_heads: int):
         super().__init__()
         if embed_dim % num_heads != 0:
             raise ValueError(
@@ -345,7 +342,6 @@ class WhisperAttentionTVM(nn.Module):
         self.embed_dim = embed_dim
         self.num_heads = num_heads
         self.head_dim = embed_dim // num_heads
-        self.is_cross_attention = is_cross_attention
 
         self.q_proj = nn.Linear(embed_dim, embed_dim, bias=True)
         self.k_proj = nn.Linear(embed_dim, embed_dim, bias=False)
@@ -385,14 +381,12 @@ class WhisperAttentionTVM(nn.Module):
         value_states = self._reshape_qkv(value_states)
 
         attn_weights = op.matmul(
-            query_states,
-            op.permute_dims(key_states, axes=[0, 1, 3, 2]),
+            query_states, op.permute_dims(key_states, axes=[0, 1, 3, 2])
         )
-
         if attention_mask is not None:
             attn_weights = op.add(attn_weights, attention_mask)
-
         attn_weights = op.softmax(attn_weights, axis=-1)
+
         attn_output = op.matmul(attn_weights, value_states)
         attn_output = self._merge_heads(attn_output)
         attn_output = self.out_proj(attn_output)
@@ -402,9 +396,7 @@ class WhisperAttentionTVM(nn.Module):
 class WhisperEncoderLayerTVM(nn.Module):
     def __init__(self, embed_dim: int, num_heads: int, ffn_dim: int):
         super().__init__()
-        self.self_attn = WhisperAttentionTVM(
-            embed_dim, num_heads, is_cross_attention=False
-        )
+        self.self_attn = WhisperAttentionTVM(embed_dim, num_heads)
         self.self_attn_layer_norm = nn.LayerNorm(embed_dim, eps=1e-5)
         self.fc1 = nn.Linear(embed_dim, ffn_dim, bias=True)
         self.fc2 = nn.Linear(ffn_dim, embed_dim, bias=True)
@@ -491,23 +483,236 @@ class WhisperEncoderTVM(nn.Module):
         return nn.spec.ModuleSpec.from_raw(
             {
                 "forward": {
-                    "input_features": nn.spec.Tensor([1, N_MELS, N_FRAMES], "float32"),
+                    "input_features": nn.spec.Tensor([1, N_MELS, N_FRAMES], "float32")
                 }
             },
             self,
         )
 
 
-class WhisperDecoderLayerTVM(nn.Module):
-    def __init__(self, embed_dim: int, num_heads: int, ffn_dim: int):
+# ----------------------------------------------------------------------
+# TVM-native cached decoder-step
+# ----------------------------------------------------------------------
+class WhisperCrossKVLayerTVM(nn.Module):
+    def __init__(self, embed_dim: int, num_heads: int, enc_len: int):
         super().__init__()
-        self.self_attn = WhisperAttentionTVM(
-            embed_dim, num_heads, is_cross_attention=False
-        )
-        self.encoder_attn = WhisperAttentionTVM(
-            embed_dim, num_heads, is_cross_attention=True
+        if embed_dim % num_heads != 0:
+            raise ValueError(
+                f"embed_dim={embed_dim} must be divisible by num_heads={num_heads}"
+            )
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.head_dim = embed_dim // num_heads
+        self.enc_len = enc_len
+
+        self.k_proj = nn.Linear(embed_dim, embed_dim, bias=False)
+        self.v_proj = nn.Linear(embed_dim, embed_dim, bias=True)
+
+    def forward(self, encoder_hidden_states: Tensor):
+        k = self.k_proj(encoder_hidden_states)
+        v = self.v_proj(encoder_hidden_states)
+
+        k = op.reshape(k, [1, self.enc_len, self.num_heads, self.head_dim])
+        v = op.reshape(v, [1, self.enc_len, self.num_heads, self.head_dim])
+        k = op.permute_dims(k, axes=[0, 2, 1, 3])
+        v = op.permute_dims(v, axes=[0, 2, 1, 3])
+        return k, v
+
+
+class WhisperCrossKVTVM(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.num_layers = int(config.decoder_layers)
+        self.d_model = int(config.d_model)
+        self.num_heads = int(config.decoder_attention_heads)
+        self.enc_len = int(config.max_source_positions)
+        self.head_dim = self.d_model // self.num_heads
+
+        self.layers = nn.ModuleList(
+            [
+                WhisperCrossKVLayerTVM(
+                    embed_dim=self.d_model,
+                    num_heads=self.num_heads,
+                    enc_len=self.enc_len,
+                )
+                for _ in range(self.num_layers)
+            ]
         )
 
+    def forward(self, encoder_hidden_states: Tensor):
+        all_k = []
+        all_v = []
+        for layer in self.layers:
+            k, v = layer(encoder_hidden_states)
+            all_k.append(
+                op.reshape(k, [1, 1, self.num_heads, self.enc_len, self.head_dim])
+            )
+            all_v.append(
+                op.reshape(v, [1, 1, self.num_heads, self.enc_len, self.head_dim])
+            )
+        cross_k = nn.concat(all_k, dim=0)
+        cross_v = nn.concat(all_v, dim=0)
+        return cross_k, cross_v
+
+    def get_default_spec(self):
+        return nn.spec.ModuleSpec.from_raw(
+            {
+                "forward": {
+                    "encoder_hidden_states": nn.spec.Tensor(
+                        [1, self.enc_len, self.d_model], "float32"
+                    )
+                }
+            },
+            self,
+        )
+
+
+class WhisperSelfAttentionStepTVM(nn.Module):
+    def __init__(self, embed_dim: int, num_heads: int, max_cache_len: int):
+        super().__init__()
+        if embed_dim % num_heads != 0:
+            raise ValueError(
+                f"embed_dim={embed_dim} must be divisible by num_heads={num_heads}"
+            )
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.head_dim = embed_dim // num_heads
+        self.max_cache_len = max_cache_len
+
+        self.q_proj = nn.Linear(embed_dim, embed_dim, bias=True)
+        self.k_proj = nn.Linear(embed_dim, embed_dim, bias=False)
+        self.v_proj = nn.Linear(embed_dim, embed_dim, bias=True)
+        self.out_proj = nn.Linear(embed_dim, embed_dim, bias=True)
+
+        self.scale = Tensor.from_scalar(float(self.head_dim**-0.5), "float32")
+        self.positions_4d = Tensor.from_const(
+            np.arange(self.max_cache_len, dtype=np.int64).reshape(
+                1, 1, self.max_cache_len, 1
+            )
+        )
+        self.positions_mask = Tensor.from_const(
+            np.arange(self.max_cache_len, dtype=np.int64).reshape(
+                1, 1, 1, self.max_cache_len
+            )
+        )
+        self.zero_f32 = Tensor.from_scalar(0.0, "float32")
+        self.one_f32 = Tensor.from_scalar(1.0, "float32")
+        self.neg_inf = Tensor.from_scalar(-1e9, "float32")
+
+    def _reshape_qkv(self, x: Tensor):
+        x = op.reshape(x, [1, 1, self.num_heads, self.head_dim])
+        x = op.permute_dims(x, axes=[0, 2, 1, 3])
+        return x
+
+    def _merge_heads(self, x: Tensor):
+        x = op.permute_dims(x, axes=[0, 2, 1, 3])
+        x = op.reshape(x, [1, 1, self.embed_dim])
+        return x
+
+    def _update_cache(self, cache: Tensor, new_value: Tensor, position_ids: Tensor):
+        pos = op.reshape(position_ids, [1, 1, 1, 1])
+        pos_mask_bool = op.equal(self.positions_4d, pos)
+        pos_mask = op.astype(pos_mask_bool, "float32")
+        pos_mask = op.broadcast_to(
+            pos_mask, [1, self.num_heads, self.max_cache_len, self.head_dim]
+        )
+        new_full = op.broadcast_to(
+            new_value, [1, self.num_heads, self.max_cache_len, self.head_dim]
+        )
+        keep_mask = op.subtract(self.one_f32, pos_mask)
+        return op.add(op.multiply(cache, keep_mask), op.multiply(new_full, pos_mask))
+
+    def _make_self_mask(self, position_ids: Tensor):
+        pos = op.reshape(position_ids, [1, 1, 1, 1])
+        valid = op.less_equal(self.positions_mask, pos)
+        zeros = op.broadcast_to(self.zero_f32, [1, 1, 1, self.max_cache_len])
+        negs = op.broadcast_to(self.neg_inf, [1, 1, 1, self.max_cache_len])
+        return op.where(valid, zeros, negs)
+
+    def forward(
+        self,
+        hidden_states: Tensor,
+        position_ids: Tensor,
+        k_cache: Tensor,
+        v_cache: Tensor,
+    ):
+        q = self.q_proj(hidden_states)
+        q = op.multiply(q, self.scale)
+        q = self._reshape_qkv(q)
+
+        k_new = self.k_proj(hidden_states)
+        v_new = self.v_proj(hidden_states)
+        k_new = self._reshape_qkv(k_new)
+        v_new = self._reshape_qkv(v_new)
+
+        new_k_cache = self._update_cache(k_cache, k_new, position_ids)
+        new_v_cache = self._update_cache(v_cache, v_new, position_ids)
+
+        attn_weights = op.matmul(q, op.permute_dims(new_k_cache, axes=[0, 1, 3, 2]))
+        attn_weights = op.add(attn_weights, self._make_self_mask(position_ids))
+        attn_weights = op.softmax(attn_weights, axis=-1)
+
+        attn_output = op.matmul(attn_weights, new_v_cache)
+        attn_output = self._merge_heads(attn_output)
+        attn_output = self.out_proj(attn_output)
+        return attn_output, new_k_cache, new_v_cache
+
+
+class WhisperCrossAttentionStepTVM(nn.Module):
+    def __init__(self, embed_dim: int, num_heads: int, enc_len: int):
+        super().__init__()
+        if embed_dim % num_heads != 0:
+            raise ValueError(
+                f"embed_dim={embed_dim} must be divisible by num_heads={num_heads}"
+            )
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.head_dim = embed_dim // num_heads
+        self.enc_len = enc_len
+
+        self.q_proj = nn.Linear(embed_dim, embed_dim, bias=True)
+        self.out_proj = nn.Linear(embed_dim, embed_dim, bias=True)
+        self.scale = Tensor.from_scalar(float(self.head_dim**-0.5), "float32")
+
+    def _reshape_q(self, x: Tensor):
+        x = op.reshape(x, [1, 1, self.num_heads, self.head_dim])
+        x = op.permute_dims(x, axes=[0, 2, 1, 3])
+        return x
+
+    def _merge_heads(self, x: Tensor):
+        x = op.permute_dims(x, axes=[0, 2, 1, 3])
+        x = op.reshape(x, [1, 1, self.embed_dim])
+        return x
+
+    def forward(
+        self, hidden_states: Tensor, cross_k_cache: Tensor, cross_v_cache: Tensor
+    ):
+        q = self.q_proj(hidden_states)
+        q = op.multiply(q, self.scale)
+        q = self._reshape_q(q)
+
+        attn_weights = op.matmul(q, op.permute_dims(cross_k_cache, axes=[0, 1, 3, 2]))
+        attn_weights = op.softmax(attn_weights, axis=-1)
+        attn_output = op.matmul(attn_weights, cross_v_cache)
+        attn_output = self._merge_heads(attn_output)
+        attn_output = self.out_proj(attn_output)
+        return attn_output
+
+
+class WhisperDecoderLayerStepTVM(nn.Module):
+    def __init__(
+        self,
+        embed_dim: int,
+        num_heads: int,
+        ffn_dim: int,
+        enc_len: int,
+        max_cache_len: int,
+    ):
+        super().__init__()
+        self.self_attn = WhisperSelfAttentionStepTVM(
+            embed_dim, num_heads, max_cache_len
+        )
+        self.encoder_attn = WhisperCrossAttentionStepTVM(embed_dim, num_heads, enc_len)
         self.self_attn_layer_norm = nn.LayerNorm(embed_dim, eps=1e-5)
         self.encoder_attn_layer_norm = nn.LayerNorm(embed_dim, eps=1e-5)
         self.fc1 = nn.Linear(embed_dim, ffn_dim, bias=True)
@@ -518,26 +723,26 @@ class WhisperDecoderLayerTVM(nn.Module):
     def forward(
         self,
         hidden_states: Tensor,
-        self_attention_mask: Tensor,
-        encoder_hidden_states: Tensor,
+        position_ids: Tensor,
+        self_k_cache: Tensor,
+        self_v_cache: Tensor,
+        cross_k_cache: Tensor,
+        cross_v_cache: Tensor,
     ):
         residual = hidden_states
         hidden_states = self.self_attn_layer_norm(hidden_states)
-        hidden_states = self.self_attn(
+        attn_out, new_self_k, new_self_v = self.self_attn(
             hidden_states,
-            key_value_states=None,
-            attention_mask=self_attention_mask,
+            position_ids,
+            self_k_cache,
+            self_v_cache,
         )
-        hidden_states = op.add(residual, hidden_states)
+        hidden_states = op.add(residual, attn_out)
 
         residual = hidden_states
         hidden_states = self.encoder_attn_layer_norm(hidden_states)
-        hidden_states = self.encoder_attn(
-            hidden_states,
-            key_value_states=encoder_hidden_states,
-            attention_mask=None,
-        )
-        hidden_states = op.add(residual, hidden_states)
+        cross_attn_out = self.encoder_attn(hidden_states, cross_k_cache, cross_v_cache)
+        hidden_states = op.add(residual, cross_attn_out)
 
         residual = hidden_states
         hidden_states = self.final_layer_norm(hidden_states)
@@ -545,34 +750,38 @@ class WhisperDecoderLayerTVM(nn.Module):
         hidden_states = self.activation_fn(hidden_states)
         hidden_states = self.fc2(hidden_states)
         hidden_states = op.add(residual, hidden_states)
-        return hidden_states
+        return hidden_states, new_self_k, new_self_v
 
 
-class WhisperDecoderLMHeadTVM(nn.Module):
+class WhisperDecoderStepLMHeadTVM(nn.Module):
     def __init__(self, config, max_dec_len: int):
         super().__init__()
         self.vocab_size = int(config.vocab_size)
         self.d_model = int(config.d_model)
         self.max_target_positions = int(config.max_target_positions)
+        self.max_source_positions = int(config.max_source_positions)
         self.decoder_layers = int(config.decoder_layers)
         self.decoder_attention_heads = int(config.decoder_attention_heads)
         self.decoder_ffn_dim = int(config.decoder_ffn_dim)
-        self.max_source_positions = int(config.max_source_positions)
         self.max_dec_len = int(max_dec_len)
+        self.head_dim = self.d_model // self.decoder_attention_heads
 
         if self.max_dec_len > self.max_target_positions:
             raise ValueError(
-                f"max_dec_len={self.max_dec_len} exceeds config.max_target_positions={self.max_target_positions}"
+                f"max_dec_len={self.max_dec_len} exceeds "
+                f"config.max_target_positions={self.max_target_positions}"
             )
 
         self.embed_tokens = nn.Embedding(self.vocab_size, self.d_model)
         self.embed_positions = nn.Embedding(self.max_target_positions, self.d_model)
         self.layers = nn.ModuleList(
             [
-                WhisperDecoderLayerTVM(
+                WhisperDecoderLayerStepTVM(
                     embed_dim=self.d_model,
                     num_heads=self.decoder_attention_heads,
                     ffn_dim=self.decoder_ffn_dim,
+                    enc_len=self.max_source_positions,
+                    max_cache_len=self.max_dec_len,
                 )
                 for _ in range(self.decoder_layers)
             ]
@@ -580,58 +789,141 @@ class WhisperDecoderLMHeadTVM(nn.Module):
         self.layer_norm = nn.LayerNorm(self.d_model, eps=1e-5)
         self.proj_out = nn.Linear(self.d_model, self.vocab_size, bias=False)
 
-        self.position_ids = Tensor.from_const(
-            np.arange(self.max_dec_len, dtype=np.int64)[None, :]
-        )
-
-        causal_keep = np.tril(
-            np.ones((1, 1, self.max_dec_len, self.max_dec_len), dtype=np.int32)
-        )
-        self.causal_keep = Tensor.from_const(causal_keep)
-        self.zero_i32 = Tensor.from_scalar(0, "int32")
-        self.zero_f32 = Tensor.from_scalar(0.0, "float32")
-        self.neg_inf = Tensor.from_scalar(-1e9, "float32")
-
-    def _make_self_attention_mask(self, decoder_attention_mask: Tensor):
-        # decoder_attention_mask: [1, T] with 1 for valid tokens, 0 for pad
-        key_keep = op.reshape(decoder_attention_mask, [1, 1, 1, self.max_dec_len])
-        allowed = op.multiply(self.causal_keep, key_keep)
-        allowed = op.greater(allowed, self.zero_i32)
-        return op.where(allowed, self.zero_f32, self.neg_inf)
-
     def forward(
         self,
-        decoder_input_ids: Tensor,
-        decoder_attention_mask: Tensor,
-        encoder_hidden_states: Tensor,
+        input_token_ids: Tensor,
+        position_ids: Tensor,
+        self_k_cache: Tensor,
+        self_v_cache: Tensor,
+        cross_k_cache: Tensor,
+        cross_v_cache: Tensor,
     ):
-        hidden_states = self.embed_tokens(decoder_input_ids)
-        pos_embeds = self.embed_positions(self.position_ids)
+        hidden_states = self.embed_tokens(input_token_ids)
+        pos_embeds = self.embed_positions(position_ids)
         hidden_states = op.add(hidden_states, pos_embeds)
 
-        self_attention_mask = self._make_self_attention_mask(decoder_attention_mask)
+        self_k_layers = nn.split(self_k_cache, self.decoder_layers, axis=0)
+        self_v_layers = nn.split(self_v_cache, self.decoder_layers, axis=0)
+        cross_k_layers = nn.split(cross_k_cache, self.decoder_layers, axis=0)
+        cross_v_layers = nn.split(cross_v_cache, self.decoder_layers, axis=0)
 
-        for layer in self.layers:
-            hidden_states = layer(
-                hidden_states=hidden_states,
-                self_attention_mask=self_attention_mask,
-                encoder_hidden_states=encoder_hidden_states,
+        new_self_k = []
+        new_self_v = []
+
+        for layer_idx, layer in enumerate(self.layers):
+            layer_self_k = op.reshape(
+                self_k_layers[layer_idx],
+                [1, self.decoder_attention_heads, self.max_dec_len, self.head_dim],
+            )
+            layer_self_v = op.reshape(
+                self_v_layers[layer_idx],
+                [1, self.decoder_attention_heads, self.max_dec_len, self.head_dim],
+            )
+            layer_cross_k = op.reshape(
+                cross_k_layers[layer_idx],
+                [
+                    1,
+                    self.decoder_attention_heads,
+                    self.max_source_positions,
+                    self.head_dim,
+                ],
+            )
+            layer_cross_v = op.reshape(
+                cross_v_layers[layer_idx],
+                [
+                    1,
+                    self.decoder_attention_heads,
+                    self.max_source_positions,
+                    self.head_dim,
+                ],
+            )
+
+            hidden_states, layer_new_k, layer_new_v = layer(
+                hidden_states,
+                position_ids,
+                layer_self_k,
+                layer_self_v,
+                layer_cross_k,
+                layer_cross_v,
+            )
+
+            new_self_k.append(
+                op.reshape(
+                    layer_new_k,
+                    [
+                        1,
+                        1,
+                        self.decoder_attention_heads,
+                        self.max_dec_len,
+                        self.head_dim,
+                    ],
+                )
+            )
+            new_self_v.append(
+                op.reshape(
+                    layer_new_v,
+                    [
+                        1,
+                        1,
+                        self.decoder_attention_heads,
+                        self.max_dec_len,
+                        self.head_dim,
+                    ],
+                )
             )
 
         hidden_states = self.layer_norm(hidden_states)
         logits = self.proj_out(hidden_states)
-        return logits
+
+        new_self_k_cache = nn.concat(new_self_k, dim=0)
+        new_self_v_cache = nn.concat(new_self_v, dim=0)
+        return logits, new_self_k_cache, new_self_v_cache
 
     def get_default_spec(self):
         return nn.spec.ModuleSpec.from_raw(
             {
                 "forward": {
-                    "decoder_input_ids": nn.spec.Tensor([1, self.max_dec_len], "int64"),
-                    "decoder_attention_mask": nn.spec.Tensor(
-                        [1, self.max_dec_len], "int32"
+                    "input_token_ids": nn.spec.Tensor([1, 1], "int64"),
+                    "position_ids": nn.spec.Tensor([1, 1], "int64"),
+                    "self_k_cache": nn.spec.Tensor(
+                        [
+                            self.decoder_layers,
+                            1,
+                            self.decoder_attention_heads,
+                            self.max_dec_len,
+                            self.head_dim,
+                        ],
+                        "float32",
                     ),
-                    "encoder_hidden_states": nn.spec.Tensor(
-                        [1, self.max_source_positions, self.d_model], "float32"
+                    "self_v_cache": nn.spec.Tensor(
+                        [
+                            self.decoder_layers,
+                            1,
+                            self.decoder_attention_heads,
+                            self.max_dec_len,
+                            self.head_dim,
+                        ],
+                        "float32",
+                    ),
+                    "cross_k_cache": nn.spec.Tensor(
+                        [
+                            self.decoder_layers,
+                            1,
+                            self.decoder_attention_heads,
+                            self.max_source_positions,
+                            self.head_dim,
+                        ],
+                        "float32",
+                    ),
+                    "cross_v_cache": nn.spec.Tensor(
+                        [
+                            self.decoder_layers,
+                            1,
+                            self.decoder_attention_heads,
+                            self.max_source_positions,
+                            self.head_dim,
+                        ],
+                        "float32",
                     ),
                 }
             },
@@ -661,8 +953,25 @@ def copy_encoder_weights_from_hf(
         set_param_from_hf(param, hf_state[hf_name])
 
 
-def copy_decoder_weights_from_hf(
-    tvm_decoder: WhisperDecoderLMHeadTVM,
+def copy_cross_kv_weights_from_hf(
+    tvm_cross_kv: WhisperCrossKVTVM, hf_model: WhisperForConditionalGeneration
+):
+    hf_state = hf_model.state_dict()
+    tvm_state = tvm_cross_kv.state_dict()
+    for name, param in tvm_state.items():
+        parts = name.split(".")
+        if len(parts) < 4 or parts[0] != "layers":
+            raise KeyError(f"Unexpected cross-kv state name: {name}")
+        layer_idx = parts[1]
+        local_name = ".".join(parts[2:])
+        hf_name = f"model.decoder.layers.{layer_idx}.encoder_attn.{local_name}"
+        if hf_name not in hf_state:
+            raise KeyError(f"Missing HF cross-kv weight: {hf_name}")
+        set_param_from_hf(param, hf_state[hf_name])
+
+
+def copy_decoder_step_weights_from_hf(
+    tvm_decoder: WhisperDecoderStepLMHeadTVM,
     hf_model: WhisperForConditionalGeneration,
 ):
     hf_state = hf_model.state_dict()
@@ -673,8 +982,196 @@ def copy_decoder_weights_from_hf(
         else:
             hf_name = "model.decoder." + name
         if hf_name not in hf_state:
-            raise KeyError(f"Missing HF decoder weight: {hf_name}")
+            raise KeyError(f"Missing HF decoder-step weight: {hf_name}")
         set_param_from_hf(param, hf_state[hf_name])
+
+
+# ----------------------------------------------------------------------
+# HF reference helpers
+# ----------------------------------------------------------------------
+def collect_hf_cross_kv(
+    hf_model: WhisperForConditionalGeneration, encoder_hidden_states: torch.Tensor
+):
+    all_k = []
+    all_v = []
+    with torch.no_grad():
+        for layer in hf_model.model.decoder.layers:
+            attn = layer.encoder_attn
+            bsz, src_len, _ = encoder_hidden_states.shape
+
+            k = attn.k_proj(encoder_hidden_states)
+            v = attn.v_proj(encoder_hidden_states)
+
+            k = (
+                k.view(bsz, src_len, attn.num_heads, attn.head_dim)
+                .transpose(1, 2)
+                .contiguous()
+            )
+            v = (
+                v.view(bsz, src_len, attn.num_heads, attn.head_dim)
+                .transpose(1, 2)
+                .contiguous()
+            )
+
+            all_k.append(k)
+            all_v.append(v)
+
+    return torch.stack(all_k, dim=0), torch.stack(all_v, dim=0)
+
+
+def run_hf_cached_decode(
+    hf_model: WhisperForConditionalGeneration,
+    processor,
+    encoder_hidden_states: torch.Tensor,
+    prompt_ids: List[int],
+    max_new_tokens: int,
+):
+    hf_past = None
+    last_logits_np = None
+
+    with torch.no_grad():
+        for pos, tok in enumerate(prompt_ids):
+            token = torch.tensor([[tok]], dtype=torch.long)
+            position_ids = torch.tensor([[pos]], dtype=torch.long)
+            out = hf_model.model.decoder(
+                input_ids=token,
+                encoder_hidden_states=encoder_hidden_states,
+                past_key_values=hf_past,
+                position_ids=position_ids,
+                use_cache=True,
+                return_dict=True,
+            )
+            hf_past = out.past_key_values
+            logits = hf_model.proj_out(out.last_hidden_state)
+            last_logits_np = logits.detach().cpu().numpy().astype(np.float32)
+
+    if last_logits_np is None:
+        raise RuntimeError("HF cached decode prefill produced no logits.")
+
+    prefill_logits_np = last_logits_np.copy()
+    generated = list(prompt_ids)
+
+    for gen_idx in range(max_new_tokens):
+        next_logits = apply_whisper_suppression(
+            last_logits_np[0, 0],
+            hf_model.generation_config,
+            gen_idx,
+        )
+        next_id = int(np.argmax(next_logits))
+        generated.append(next_id)
+
+        if next_id == int(hf_model.config.eos_token_id):
+            break
+
+        position = len(generated) - 1
+        with torch.no_grad():
+            token = torch.tensor([[next_id]], dtype=torch.long)
+            position_ids = torch.tensor([[position]], dtype=torch.long)
+            out = hf_model.model.decoder(
+                input_ids=token,
+                encoder_hidden_states=encoder_hidden_states,
+                past_key_values=hf_past,
+                position_ids=position_ids,
+                use_cache=True,
+                return_dict=True,
+            )
+            hf_past = out.past_key_values
+            logits = hf_model.proj_out(out.last_hidden_state)
+            last_logits_np = logits.detach().cpu().numpy().astype(np.float32)
+
+    generated_tensor = torch.tensor([generated], dtype=torch.long)
+    text = processor.batch_decode(generated_tensor, skip_special_tokens=True)[0]
+    return generated_tensor, text, prefill_logits_np
+
+
+def run_tvm_cached_decode(
+    step_vm,
+    step_params_tvm,
+    dev,
+    prompt_ids: List[int],
+    max_new_tokens: int,
+    num_layers: int,
+    num_heads: int,
+    max_dec_len: int,
+    head_dim: int,
+    vocab_size: int,
+    eos_token_id: int,
+    generation_config,
+    cross_k_cache_tvm,
+    cross_v_cache_tvm,
+):
+    self_k_cache_np = np.zeros(
+        (num_layers, 1, num_heads, max_dec_len, head_dim), dtype=np.float32
+    )
+    self_v_cache_np = np.zeros(
+        (num_layers, 1, num_heads, max_dec_len, head_dim), dtype=np.float32
+    )
+
+    self_k_cache_tvm = to_tvm_tensor(self_k_cache_np, dev)
+    self_v_cache_tvm = to_tvm_tensor(self_v_cache_np, dev)
+    last_logits_tvm = None
+
+    for pos, tok in enumerate(prompt_ids):
+        tok_tvm = to_tvm_tensor(np.array([[tok]], dtype=np.int64), dev)
+        pos_tvm = to_tvm_tensor(np.array([[pos]], dtype=np.int64), dev)
+        step_out = step_vm["forward"](
+            tok_tvm,
+            pos_tvm,
+            self_k_cache_tvm,
+            self_v_cache_tvm,
+            cross_k_cache_tvm,
+            cross_v_cache_tvm,
+            *step_params_tvm,
+        )
+        last_logits_tvm, self_k_cache_tvm, self_v_cache_tvm = unwrap_vm_outputs(
+            step_out
+        )
+
+    if last_logits_tvm is None:
+        raise RuntimeError("TVM cached decode prefill produced no logits.")
+
+    prefill_logits_np = unwrap_vm_output(last_logits_tvm).numpy().astype(np.float32)
+    generated = list(prompt_ids)
+
+    for gen_idx in range(max_new_tokens):
+        next_logits = apply_whisper_suppression(
+            prefill_logits_np[0, 0]
+            if gen_idx == 0
+            else unwrap_vm_output(last_logits_tvm).numpy()[0, 0],
+            generation_config,
+            gen_idx,
+        )
+        next_id = int(np.argmax(next_logits))
+        if not (0 <= next_id < vocab_size):
+            raise RuntimeError(f"Out-of-range token id: {next_id}")
+
+        generated.append(next_id)
+        if next_id == eos_token_id:
+            break
+
+        position = len(generated) - 1
+        if position >= max_dec_len:
+            raise RuntimeError(
+                f"Decoder length overflow: position={position}, max_dec_len={max_dec_len}"
+            )
+
+        tok_tvm = to_tvm_tensor(np.array([[next_id]], dtype=np.int64), dev)
+        pos_tvm = to_tvm_tensor(np.array([[position]], dtype=np.int64), dev)
+        step_out = step_vm["forward"](
+            tok_tvm,
+            pos_tvm,
+            self_k_cache_tvm,
+            self_v_cache_tvm,
+            cross_k_cache_tvm,
+            cross_v_cache_tvm,
+            *step_params_tvm,
+        )
+        last_logits_tvm, self_k_cache_tvm, self_v_cache_tvm = unwrap_vm_outputs(
+            step_out
+        )
+
+    generated_np = np.asarray([generated], dtype=np.int64)
+    return generated_np, prefill_logits_np
 
 
 # ----------------------------------------------------------------------
@@ -693,12 +1190,13 @@ def main():
     audio = load_audio_from_flac(args.flac)
     waveform_fixed, valid_samples = pad_or_trim_audio(audio)
 
-    pad_token_id = (
-        hf_model.config.pad_token_id if hf_model.config.pad_token_id is not None else 0
-    )
     eos_token_id = int(hf_model.config.eos_token_id)
     decoder_start_token_id = int(hf_model.config.decoder_start_token_id)
     vocab_size = int(hf_model.config.vocab_size)
+    num_layers = int(hf_model.config.decoder_layers)
+    num_heads = int(hf_model.config.decoder_attention_heads)
+    head_dim = int(hf_model.config.d_model // hf_model.config.decoder_attention_heads)
+    enc_len = int(hf_model.config.max_source_positions)
 
     prompt_ids = get_decoder_prompt_ids(processor, decoder_start_token_id)
     max_dec_len = len(prompt_ids) + int(args.max_new_tokens)
@@ -707,10 +1205,14 @@ def main():
         np.asarray(processor.feature_extractor.mel_filters, dtype=np.float32)
     )
     encoder_model = WhisperEncoderTVM(hf_model.config)
-    decoder_model = WhisperDecoderLMHeadTVM(hf_model.config, max_dec_len=max_dec_len)
+    cross_kv_model = WhisperCrossKVTVM(hf_model.config)
+    decoder_step_model = WhisperDecoderStepLMHeadTVM(
+        hf_model.config, max_dec_len=max_dec_len
+    )
 
     copy_encoder_weights_from_hf(encoder_model, hf_model)
-    copy_decoder_weights_from_hf(decoder_model, hf_model)
+    copy_cross_kv_weights_from_hf(cross_kv_model, hf_model)
+    copy_decoder_step_weights_from_hf(decoder_step_model, hf_model)
 
     preprocess_vm, _, preprocess_params_tvm = compile_nn_module_to_vm(
         preprocess_model, target, dev
@@ -718,8 +1220,11 @@ def main():
     encoder_vm, _, encoder_params_tvm = compile_nn_module_to_vm(
         encoder_model, target, dev
     )
-    decoder_vm, _, decoder_params_tvm = compile_nn_module_to_vm(
-        decoder_model, target, dev
+    cross_kv_vm, _, cross_kv_params_tvm = compile_nn_module_to_vm(
+        cross_kv_model, target, dev
+    )
+    decoder_step_vm, _, decoder_step_params_tvm = compile_nn_module_to_vm(
+        decoder_step_model, target, dev
     )
 
     # --------------------------------------------------------------
@@ -773,44 +1278,37 @@ def main():
     )
 
     # --------------------------------------------------------------
-    # 3) Decoder logits compare (isolated, using HF encoder hidden)
+    # 3) Cross K/V compare (isolated on HF encoder hidden)
     # --------------------------------------------------------------
-    decoder_ids_np = np.full((1, max_dec_len), pad_token_id, dtype=np.int64)
-    decoder_mask_np = np.zeros((1, max_dec_len), dtype=np.int32)
-    decoder_ids_np[0, : len(prompt_ids)] = np.asarray(prompt_ids, dtype=np.int64)
-    decoder_mask_np[0, : len(prompt_ids)] = 1
+    hf_cross_k, hf_cross_v = collect_hf_cross_kv(hf_model, hf_encoder_hidden)
 
-    decoder_ids_torch = torch.from_numpy(decoder_ids_np)
-    decoder_mask_torch = torch.from_numpy(decoder_mask_np).to(torch.long)
-
-    with torch.no_grad():
-        hf_decoder_hidden = hf_model.model.decoder(
-            input_ids=decoder_ids_torch,
-            attention_mask=decoder_mask_torch,
-            encoder_hidden_states=hf_encoder_hidden,
-            return_dict=False,
-        )[0]
-        hf_logits = hf_model.proj_out(hf_decoder_hidden)
-
-    tvm_logits_on_hf_encoder = decoder_vm["forward"](
-        to_tvm_tensor(decoder_ids_np, dev),
-        to_tvm_tensor(decoder_mask_np, dev),
+    tvm_cross_out_on_hf_encoder = cross_kv_vm["forward"](
         to_tvm_tensor(hf_encoder_hidden, dev),
-        *decoder_params_tvm,
+        *cross_kv_params_tvm,
     )
-    tvm_logits_on_hf_encoder_np = (
-        unwrap_vm_output(tvm_logits_on_hf_encoder).numpy().astype(np.float32)
+    tvm_cross_k_on_hf, tvm_cross_v_on_hf = unwrap_vm_outputs(
+        tvm_cross_out_on_hf_encoder
+    )
+    tvm_cross_k_on_hf_np = (
+        unwrap_vm_output(tvm_cross_k_on_hf).numpy().astype(np.float32)
+    )
+    tvm_cross_v_on_hf_np = (
+        unwrap_vm_output(tvm_cross_v_on_hf).numpy().astype(np.float32)
     )
 
-    valid_prefix = len(prompt_ids)
     report_diff(
-        "decoder logits (valid prefix, HF encoder hidden)",
-        hf_logits[:, :valid_prefix].detach().cpu().numpy().astype(np.float32),
-        tvm_logits_on_hf_encoder_np[:, :valid_prefix],
+        "cross_k_cache (HF encoder hidden)",
+        hf_cross_k.detach().cpu().numpy().astype(np.float32),
+        tvm_cross_k_on_hf_np,
+    )
+    report_diff(
+        "cross_v_cache (HF encoder hidden)",
+        hf_cross_v.detach().cpu().numpy().astype(np.float32),
+        tvm_cross_v_on_hf_np,
     )
 
     # --------------------------------------------------------------
-    # 4) HF full generate reference using TVM-preprocessed features
+    # 4) HF generate() reference using TVM-preprocessed features
     # --------------------------------------------------------------
     gen_cfg = copy.deepcopy(hf_model.generation_config)
     gen_cfg.max_length = None
@@ -836,64 +1334,131 @@ def main():
         with torch.no_grad():
             hf_out = hf_model.generate(**hf_generate_kwargs)
 
-    hf_full_ids = hf_out.sequences if hasattr(hf_out, "sequences") else hf_out
-    hf_full_ids = maybe_reconstruct_full_hf_ids(hf_full_ids, prompt_ids, eos_token_id)
-    hf_text = processor.batch_decode(hf_full_ids, skip_special_tokens=True)[0]
+    hf_generate_full_ids = hf_out.sequences if hasattr(hf_out, "sequences") else hf_out
+    hf_generate_full_ids = maybe_reconstruct_full_hf_ids(
+        hf_generate_full_ids,
+        prompt_ids,
+        eos_token_id,
+    )
+    hf_generate_text = processor.batch_decode(
+        hf_generate_full_ids, skip_special_tokens=True
+    )[0]
 
     # --------------------------------------------------------------
-    # 5) TVM greedy decode (encoder once + no-cache full decoder)
+    # 5) HF manual cached-step decode reference
     # --------------------------------------------------------------
-    decoder_ids_np = np.full((1, max_dec_len), pad_token_id, dtype=np.int64)
-    decoder_mask_np = np.zeros((1, max_dec_len), dtype=np.int32)
-    decoder_ids_np[0, : len(prompt_ids)] = np.asarray(prompt_ids, dtype=np.int64)
-    decoder_mask_np[0, : len(prompt_ids)] = 1
-    cur_len = len(prompt_ids)
+    hf_manual_ids, hf_manual_text, hf_prefill_logits_np = run_hf_cached_decode(
+        hf_model,
+        processor,
+        hf_encoder_hidden,
+        prompt_ids,
+        int(args.max_new_tokens),
+    )
 
+    # --------------------------------------------------------------
+    # 6) TVM cached-step decode (isolated: HF encoder hidden -> TVM cross cache -> TVM decode)
+    # --------------------------------------------------------------
+    tvm_isolated_ids_np, tvm_prefill_logits_np = run_tvm_cached_decode(
+        step_vm=decoder_step_vm,
+        step_params_tvm=decoder_step_params_tvm,
+        dev=dev,
+        prompt_ids=prompt_ids,
+        max_new_tokens=int(args.max_new_tokens),
+        num_layers=num_layers,
+        num_heads=num_heads,
+        max_dec_len=max_dec_len,
+        head_dim=head_dim,
+        vocab_size=vocab_size,
+        eos_token_id=eos_token_id,
+        generation_config=hf_model.generation_config,
+        cross_k_cache_tvm=tvm_cross_k_on_hf,
+        cross_v_cache_tvm=tvm_cross_v_on_hf,
+    )
+    tvm_isolated_text = processor.batch_decode(
+        torch.from_numpy(tvm_isolated_ids_np), skip_special_tokens=True
+    )[0]
+
+    report_diff(
+        "decoder-step prefill logits (HF encoder hidden)",
+        hf_prefill_logits_np,
+        tvm_prefill_logits_np,
+    )
+
+    # --------------------------------------------------------------
+    # 7) TVM cached-step full pipeline decode (TVM encoder hidden -> TVM cross cache -> TVM decode)
+    # --------------------------------------------------------------
     encoder_hidden_tvm_runtime = to_tvm_tensor(encoder_hidden_np, dev)
-
-    for gen_idx in range(int(args.max_new_tokens)):
-        tvm_logits = decoder_vm["forward"](
-            to_tvm_tensor(decoder_ids_np, dev),
-            to_tvm_tensor(decoder_mask_np, dev),
-            encoder_hidden_tvm_runtime,
-            *decoder_params_tvm,
-        )
-        tvm_logits_np = unwrap_vm_output(tvm_logits).numpy().astype(np.float32)
-
-        next_logits = tvm_logits_np[0, cur_len - 1]
-        next_logits = apply_whisper_suppression(
-            next_logits, hf_model.generation_config, gen_idx
-        )
-
-        next_id = int(np.argmax(next_logits))
-        if not (0 <= next_id < vocab_size):
-            raise RuntimeError(f"Out-of-range token id: {next_id}")
-
-        decoder_ids_np[0, cur_len] = next_id
-        decoder_mask_np[0, cur_len] = 1
-        cur_len += 1
-
-        if next_id == eos_token_id:
-            break
-
-    tvm_full_ids = decoder_ids_np[:, :cur_len]
-    tvm_text = processor.batch_decode(tvm_full_ids, skip_special_tokens=True)[0]
-
-    hf_content_ids = strip_prefix_and_eos(
-        hf_full_ids[0].tolist(), prompt_ids, eos_token_id
+    tvm_cross_out_full = cross_kv_vm["forward"](
+        encoder_hidden_tvm_runtime,
+        *cross_kv_params_tvm,
     )
-    tvm_content_ids = strip_prefix_and_eos(
-        tvm_full_ids[0].tolist(), prompt_ids, eos_token_id
+    tvm_cross_k_full, tvm_cross_v_full = unwrap_vm_outputs(tvm_cross_out_full)
+
+    tvm_full_ids_np, _ = run_tvm_cached_decode(
+        step_vm=decoder_step_vm,
+        step_params_tvm=decoder_step_params_tvm,
+        dev=dev,
+        prompt_ids=prompt_ids,
+        max_new_tokens=int(args.max_new_tokens),
+        num_layers=num_layers,
+        num_heads=num_heads,
+        max_dec_len=max_dec_len,
+        head_dim=head_dim,
+        vocab_size=vocab_size,
+        eos_token_id=eos_token_id,
+        generation_config=hf_model.generation_config,
+        cross_k_cache_tvm=tvm_cross_k_full,
+        cross_v_cache_tvm=tvm_cross_v_full,
+    )
+    tvm_full_text = processor.batch_decode(
+        torch.from_numpy(tvm_full_ids_np), skip_special_tokens=True
+    )[0]
+
+    # --------------------------------------------------------------
+    # 8) Final comparisons
+    # --------------------------------------------------------------
+    hf_generate_content_ids = strip_prefix_and_eos(
+        hf_generate_full_ids[0].tolist(), prompt_ids, eos_token_id
+    )
+    hf_manual_content_ids = strip_prefix_and_eos(
+        hf_manual_ids[0].tolist(), prompt_ids, eos_token_id
+    )
+    tvm_isolated_content_ids = strip_prefix_and_eos(
+        tvm_isolated_ids_np[0].tolist(), prompt_ids, eos_token_id
+    )
+    tvm_full_content_ids = strip_prefix_and_eos(
+        tvm_full_ids_np[0].tolist(), prompt_ids, eos_token_id
     )
 
-    print(f"[HF text]  {hf_text}")
-    print(f"[TVM text] {tvm_text}")
-    print(f"[HF full IDs ] {hf_full_ids[0].tolist()}")
-    print(f"[TVM full IDs] {tvm_full_ids[0].tolist()}")
-    print(f"[HF text IDs ] {hf_content_ids}")
-    print(f"[TVM text IDs] {tvm_content_ids}")
-    print(f"[match text] {hf_text == tvm_text}")
-    print(f"[match content ids] {hf_content_ids == tvm_content_ids}")
+    print(f"[HF generate text] {hf_generate_text}")
+    print(f"[HF manual text ] {hf_manual_text}")
+    print(f"[TVM isolated  ] {tvm_isolated_text}")
+    print(f"[TVM full      ] {tvm_full_text}")
+    print(f"[HF generate full IDs] {hf_generate_full_ids[0].tolist()}")
+    print(f"[HF manual full IDs ] {hf_manual_ids[0].tolist()}")
+    print(f"[TVM isolated IDs  ] {tvm_isolated_ids_np[0].tolist()}")
+    print(f"[TVM full IDs      ] {tvm_full_ids_np[0].tolist()}")
+    print(f"[HF generate text IDs] {hf_generate_content_ids}")
+    print(f"[HF manual text IDs ] {hf_manual_content_ids}")
+    print(f"[TVM isolated IDs   ] {tvm_isolated_content_ids}")
+    print(f"[TVM full text IDs  ] {tvm_full_content_ids}")
+    print(
+        f"[match manual full (isolated)] {hf_manual_ids[0].tolist() == tvm_isolated_ids_np[0].tolist()}"
+    )
+    print(
+        f"[match manual content (isolated)] {hf_manual_content_ids == tvm_isolated_content_ids}"
+    )
+    print(
+        f"[match manual full (full pipeline)] {hf_manual_ids[0].tolist() == tvm_full_ids_np[0].tolist()}"
+    )
+    print(
+        f"[match manual content (full pipeline)] {hf_manual_content_ids == tvm_full_content_ids}"
+    )
+    print(f"[match generate vs TVM text] {hf_generate_text == tvm_full_text}")
+
+    print(
+        f"[cache shapes] self=({num_layers}, 1, {num_heads}, {max_dec_len}, {head_dim}) cross=({num_layers}, 1, {num_heads}, {enc_len}, {head_dim})"
+    )
 
 
 if __name__ == "__main__":
