@@ -18,8 +18,9 @@ from __future__ import annotations
 
 import argparse
 import pathlib
-import sys
 from typing import Any
+
+import tvm_ffi
 
 
 def parse_args() -> argparse.Namespace:
@@ -37,7 +38,11 @@ def parse_args() -> argparse.Namespace:
             "this should typically be a directory containing tokenizer.json or tokenizer.model."
         ),
     )
-    p.add_argument("--text", required=True, help="Input text to encode/decode")
+    p.add_argument(
+        "--text",
+        default="And so my fellow Americans ask not what your country can do for you ask what you can do for your country.",
+        help="Input text to encode/decode",
+    )
     p.add_argument(
         "--print-metadata",
         action="store_true",
@@ -48,36 +53,21 @@ def parse_args() -> argparse.Namespace:
 
 def _to_py_list(x: Any) -> list[int]:
     """Best-effort conversion of TVM-FFI IntTuple / tuple-like return values to list[int]."""
-    if isinstance(x, list):
-        return [int(v) for v in x]
-    if isinstance(x, tuple):
-        return [int(v) for v in x]
     if hasattr(x, "tolist"):
-        y = x.tolist()
-        if isinstance(y, list):
-            return [int(v) for v in y]
+        x = x.tolist()
+    if isinstance(x, (list, tuple)):
+        return [int(v) for v in x]
     if hasattr(x, "__iter__"):
         return [int(v) for v in x]
     raise TypeError(f"Unable to convert encoded ids of type {type(x)!r} to Python list")
 
 
-def main() -> int:
+def main() -> None:
     args = parse_args()
 
-    lib_path = pathlib.Path(args.lib)
-    tok_path = pathlib.Path(args.tokenizer_path)
-    if not lib_path.exists():
-        raise FileNotFoundError(f"Shared library not found: {lib_path}")
-    if not tok_path.exists():
-        raise FileNotFoundError(f"Tokenizer path not found: {tok_path}")
+    lib_path = pathlib.Path(args.lib).resolve(strict=True)
+    tok_path = pathlib.Path(args.tokenizer_path).resolve(strict=True)
 
-    try:
-        import tvm_ffi
-    except Exception:  # pragma: no cover
-        print("Failed to import tvm_ffi. Make sure tvm-ffi Python bindings are installed.", file=sys.stderr)
-        raise
-
-    # Load the shared library first so its static registration block runs.
     tvm_ffi.load_module(str(lib_path))
     print(f"Loaded module: {lib_path}")
 
@@ -109,8 +99,6 @@ def main() -> int:
     print(f"decoded_text : {decoded!r}")
     print(f"roundtrip_eq : {decoded == args.text}")
 
-    return 0
-
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
