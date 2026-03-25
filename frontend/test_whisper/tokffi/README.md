@@ -1,6 +1,6 @@
-# tokffi
+# tokffi (streaming)
 
-Minimal standalone TVM-FFI wrapper around `tokenizers-cpp`.
+Minimal standalone TVM-FFI wrapper around `tokenizers-cpp`, with a streaming detokenizer.
 
 ## Exposed API
 
@@ -11,11 +11,10 @@ Global functions:
 - `tokffi.TokenizerFromPath(path: str) -> tokffi.Tokenizer`
 - `tokffi.TokenizerEncode(tok: tokffi.Tokenizer, text: str) -> IntTuple`
 - `tokffi.TokenizerDecode(tok: tokffi.Tokenizer, ids: IntTuple) -> str`
-
-Object methods (via reflection):
-
-- `tok.encode(text)`
-- `tok.decode(ids)`
+- `tokffi.TextStreamer(tok: tokffi.Tokenizer) -> tokffi.TextStreamer`
+- `tokffi.TextStreamerPut(streamer: tokffi.TextStreamer, ids: IntTuple) -> str`
+- `tokffi.TextStreamerPutOne(streamer: tokffi.TextStreamer, token_id: int) -> str`
+- `tokffi.TextStreamerFinish(streamer: tokffi.TextStreamer) -> str`
 
 ## Build
 
@@ -55,5 +54,9 @@ print(text)
 
 ## Notes
 
-- `TokenizerFromPath` only supports `tokenizer.json` and `tokenizer.model`.
-- This is intentionally minimal: no tokenizer-info detection, no prefix-mask logic, no special-token post-processing helpers.
+The streaming detokenizer follows the same broad idea as MLC-LLM's `TextStreamer`:
+- decode incrementally
+- only return UTF-8-valid text
+- keep back a few pending tokens when the decode currently ends in the UTF-8 replacement character
+
+`TokenizerFromPath` still only supports `tokenizer.json` and `tokenizer.model`.

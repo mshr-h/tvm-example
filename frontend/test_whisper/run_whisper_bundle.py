@@ -63,17 +63,21 @@ def unwrap_vm_outputs(x):
     return [unwrap_vm_outputs(x[i]) for i in range(len(x))]
 
 
-class TokFFITokenizer:
-    def __init__(self, tokenizer_obj, decode_fn):
+class TokFFITextStreamer:
+    def __init__(self, tokenizer_obj, streamer_obj, put_one_fn, finish_fn):
         self._tokenizer_obj = tokenizer_obj
-        self._decode_fn = decode_fn
+        self._streamer_obj = streamer_obj
+        self._put_one_fn = put_one_fn
+        self._finish_fn = finish_fn
 
-    def decode(self, token_ids: Sequence[int]) -> str:
-        token_ids = tuple(int(tok) for tok in token_ids)
-        return str(self._decode_fn(self._tokenizer_obj, token_ids))
+    def put_one(self, token_id: int) -> str:
+        return str(self._put_one_fn(self._streamer_obj, int(token_id)))
+
+    def finish(self) -> str:
+        return str(self._finish_fn(self._streamer_obj))
 
 
-def build_tokffi_tokenizer(lib_path: Path, tokenizer_dir: Path):
+def build_tokffi_text_streamer(lib_path: Path, tokenizer_dir: Path):
     if not lib_path.exists():
         raise FileNotFoundError(f"tokffi shared library not found: {lib_path}")
     if not tokenizer_dir.exists():
@@ -81,18 +85,12 @@ def build_tokffi_tokenizer(lib_path: Path, tokenizer_dir: Path):
 
     tvm_ffi.load_module(str(lib_path))
     tokenizer_from_path = tvm_ffi.get_global_func("tokffi.TokenizerFromPath")
-    decode_fn = tvm_ffi.get_global_func("tokffi.TokenizerDecode")
+    make_streamer = tvm_ffi.get_global_func("tokffi.TextStreamer")
+    put_one_fn = tvm_ffi.get_global_func("tokffi.TextStreamerPutOne")
+    finish_fn = tvm_ffi.get_global_func("tokffi.TextStreamerFinish")
     tokenizer_obj = tokenizer_from_path(str(tokenizer_dir))
-    return TokFFITokenizer(tokenizer_obj, decode_fn)
-
-
-def filter_special_ids(seq: Sequence[int], special_ids: set[int]):
-    return [int(tok) for tok in seq if int(tok) not in special_ids]
-
-
-def decode_with_tokffi(tokenizer: TokFFITokenizer, token_ids: Sequence[int], special_ids: set[int]):
-    token_ids = filter_special_ids(token_ids, special_ids)
-    return tokenizer.decode(token_ids)
+    streamer_obj = make_streamer(tokenizer_obj)
+    return TokFFITextStreamer(tokenizer_obj, streamer_obj, put_one_fn, finish_fn)
 
 
 def strip_prefix_and_eos(seq: Sequence[int], prompt_ids: list[int], eos_token_id: int):
@@ -168,7 +166,7 @@ def main():
         raise FileNotFoundError(f"bundle params not found: {params_path}")
 
     dev = choose_device(args.device)
-    tokenizer = build_tokffi_tokenizer(args.tokffi_lib, args.tokffi_tokenizer_dir)
+    text_streamer = build_tokffi_text_streamer(args.tokffi_lib, args.tokffi_tokenizer_dir)
 
     lib = tvm.runtime.load_module(str(lib_path))
     vm = relax.VirtualMachine(lib, dev)
@@ -258,6 +256,12 @@ def main():
         if not (0 <= next_id < vocab_size):
             raise RuntimeError(f"Out-of-range token id: {next_id}")
         tvm_generated_content_ids.append(next_id)
+
+        if next_id not in special_ids:
+            delta = text_streamer.put_one(next_id)
+            if delta:
+                print(delta, end="", flush=True)
+
         if next_id == eos_token_id or gen_idx == max_new_tokens - 1:
             break
 
@@ -279,11 +283,14 @@ def main():
         self_v_cache_np[:, :, :, cached_tokens : cached_tokens + 1, :] = new_v_np
         cached_tokens += 1
 
+    tail = text_streamer.finish()
+    if tail:
+        print(tail, end="", flush=True)
+    print()
+
     tvm_full_ids = prompt_ids + tvm_generated_content_ids
     tvm_content_ids = strip_prefix_and_eos(tvm_full_ids, prompt_ids, eos_token_id)
-    tvm_text = decode_with_tokffi(tokenizer, tvm_content_ids, special_ids)
 
-    print(tvm_text)
     if args.print_ids:
         print(f"[full ids]    {tvm_full_ids}")
         print(f"[content ids] {tvm_content_ids}")
