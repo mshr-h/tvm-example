@@ -44,8 +44,8 @@ def parse_args():
 
 def build_target(name: str):
     if name == "cuda":
-        return tvm.target.Target("cuda")
-    return tvm.target.Target("llvm")
+        return tvm.target.Target.from_device("cuda")
+    return tvm.target.Target.from_device("cpu")
 
 
 def get_s_tir_pipeline():
@@ -679,16 +679,6 @@ def save_params_tvm(named_params, out_path: Path):
     return names
 
 
-def export_executable(executable, out_path: Path):
-    if hasattr(executable, "export_library"):
-        executable.export_library(str(out_path))
-        return
-    if hasattr(executable, "mod") and hasattr(executable.mod, "export_library"):
-        executable.mod.export_library(str(out_path))
-        return
-    raise AttributeError("Compiled executable does not expose export_library")
-
-
 def main():
     args = parse_args()
     out_dir = args.output_dir
@@ -721,7 +711,7 @@ def main():
     params_path = out_dir / "whisper_bundle.params"
     metadata_path = out_dir / "whisper_bundle_metadata.json"
 
-    export_executable(executable, lib_path)
+    executable.export_library(lib_path)
     param_names = save_params_tvm(named_params, params_path)
 
     metadata = {
