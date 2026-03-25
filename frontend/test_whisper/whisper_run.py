@@ -7,14 +7,13 @@ from typing import List, Sequence
 import numpy as np
 import soundfile as sf
 import torch
+import tvm
 import tvm_ffi
 from scipy.signal import resample_poly
 from transformers import AutoProcessor, WhisperForConditionalGeneration
+from tvm import relax
 from tvm.relax.frontend import nn
 from tvm.relax.frontend.nn import Tensor, op
-
-import tvm
-from tvm import relax
 
 SAMPLE_RATE = 16000
 CHUNK_LENGTH = 30
