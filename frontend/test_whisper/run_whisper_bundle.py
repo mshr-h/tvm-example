@@ -139,14 +139,19 @@ def make_past_keep_mask_np(past_len: int, max_past_len: int) -> np.ndarray:
     return mask
 
 
-def load_params_npz(params_path: Path, dev, param_count: int):
-    params_npz = np.load(params_path)
+def load_params_tvm(params_path: Path, dev, param_names: Sequence[str], param_count: int):
+    if len(param_names) != param_count:
+        raise ValueError(
+            f"Metadata param count mismatch: param_count={param_count}, len(param_names)={len(param_names)}"
+        )
+    params_by_name = {
+        str(name): value for name, value in tvm.runtime.load_param_dict_from_file(str(params_path)).items()
+    }
     params = []
-    for i in range(param_count):
-        key = f"p_{i:04d}"
-        if key not in params_npz:
-            raise KeyError(f"Missing parameter array: {key}")
-        params.append(tvm.runtime.tensor(params_npz[key], dev))
+    for name in param_names:
+        if name not in params_by_name:
+            raise KeyError(f"Missing parameter tensor: {name}")
+        params.append(to_tvm_tensor(params_by_name[name], dev))
     return params
 
 
@@ -170,7 +175,12 @@ def main():
 
     lib = tvm.runtime.load_module(str(lib_path))
     vm = relax.VirtualMachine(lib, dev)
-    params = load_params_npz(params_path, dev, int(metadata["param_count"]))
+    params = load_params_tvm(
+        params_path,
+        dev,
+        [str(name) for name in metadata["param_names"]],
+        int(metadata["param_count"]),
+    )
 
     audio = load_audio_from_flac(args.flac, int(metadata["sample_rate"]))
     waveform_fixed, valid_samples = pad_or_trim_audio(audio, int(metadata["n_samples"]))

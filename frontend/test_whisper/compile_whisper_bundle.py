@@ -30,7 +30,8 @@ NO_TIMESTAMPS = True
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
-            "Compile WhisperBundle into a single Relax executable (.so) plus params.npz and metadata.json. "
+            "Compile WhisperBundle into a single Relax executable (.so) plus native TVM params (.params) "
+            "and metadata.json. "
             "This step requires transformers/torch."
         )
     )
@@ -666,15 +667,15 @@ def copy_decoder_step_weights_from_hf(
         bind_param_from_torch(layer.final_layer_norm.bias, hf_state[prefix + "final_layer_norm.bias"])
 
 
-def save_params_npz(named_params, out_path: Path):
-    arrays = {}
+def save_params_tvm(named_params, out_path: Path):
+    params = {}
     names = []
-    for i, (name, param) in enumerate(named_params):
+    for name, param in named_params:
         if param.data is None:
             raise ValueError(f"Parameter {name} is not bound")
-        arrays[f"p_{i:04d}"] = param.data.numpy()
+        params[name] = param.data
         names.append(name)
-    np.savez(out_path, **arrays)
+    tvm.runtime.save_param_dict_to_file(params, str(out_path))
     return names
 
 
@@ -717,11 +718,11 @@ def main():
     executable = tvm.compile(mod, **compile_kwargs)
 
     lib_path = out_dir / "whisper_bundle.so"
-    params_path = out_dir / "whisper_bundle_params.npz"
+    params_path = out_dir / "whisper_bundle.params"
     metadata_path = out_dir / "whisper_bundle_metadata.json"
 
     export_executable(executable, lib_path)
-    param_names = save_params_npz(named_params, params_path)
+    param_names = save_params_tvm(named_params, params_path)
 
     metadata = {
         "model_id": args.model_id,
