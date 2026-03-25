@@ -1,4 +1,13 @@
+# Whisper TVM
+
+Apache TVM implementation of OpenAI's Whisper model.
+
+## Usage
+
+Compile model with TVM.
+
 ```bash
+# choose targe model
 export WHISPER_SIZE=tiny
 export WHISPER_SIZE=base
 export WHISPER_SIZE=small
@@ -10,9 +19,17 @@ python compile_whisper_bundle.py \
   --output-dir artifacts_whisper_${WHISPER_SIZE} \
   --target cuda \
   --max-new-tokens 128
+```
 
+Download tokenizer.
+
+```bash
 uvx hf download openai/whisper-tiny tokenizer.json --local-dir whisper_tokenizer
+```
 
+Run compiled model.
+
+```bash
 python run_whisper_bundle.py \
   --artifacts-dir artifacts_whisper_${WHISPER_SIZE} \
   --flac jfk.flac \
