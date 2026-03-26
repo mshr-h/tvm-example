@@ -1,1 +1,4 @@
 *.flac
+*.json
+*.params
+*.so
