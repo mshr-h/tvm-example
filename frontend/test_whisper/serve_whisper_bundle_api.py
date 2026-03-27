@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 import argparse
 import threading
 from pathlib import Path
